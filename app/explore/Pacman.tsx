@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState, useCallback } from 'react'
+import { getPacmanAudio } from '@/lib/PacmanAudio'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -215,6 +216,13 @@ export default function Pacman({ darkMode, locationName, locationColor, onClose 
   const [uiLives, setUiLives] = useState(3)
   const [uiPhase, setUiPhase] = useState<Phase>('start')
   const [cellSize, setCellSize] = useState(20)
+  const [muted, setMuted] = useState(false)
+
+  // Audio
+  const audio = getPacmanAudio()
+
+  // Track frightened state for BGM switching
+  const wasFrightenedRef = useRef(false)
 
   // Initials entry
   const [initials, setInitials] = useState(['A', 'A', 'A'])
@@ -468,10 +476,14 @@ export default function Pacman({ darkMode, locationName, locationColor, onClose 
       mazeRef.current[row][col] = E
       scoreRef.current += 10
       dotsRemainingRef.current--
+      audio.playWaka()
     } else if (cell === P) {
       mazeRef.current[row][col] = E
       scoreRef.current += 50
       dotsRemainingRef.current--
+      audio.playPowerPellet()
+      audio.startPowerMode()
+      wasFrightenedRef.current = true
       // Activate frightened mode
       frightenedChainRef.current = 0
       for (const g of ghostsRef.current) {
@@ -507,12 +519,15 @@ export default function Pacman({ darkMode, locationName, locationColor, onClose 
           })
           g.mode = 'dead'
           g.deadTimer = 5000
+          audio.playGhostEaten()
         } else {
           // Player caught
           if (phaseRef.current === 'playing') {
             phaseRef.current = 'dying'
             dyingTimerRef.current = 1500
             livesRef.current--
+            audio.stopBGM()
+            audio.playDeath()
           }
         }
       }
@@ -804,6 +819,8 @@ export default function Pacman({ darkMode, locationName, locationColor, onClose 
       if (phaseTimerRef.current <= 0) {
         phaseRef.current = 'playing'
         setUiPhase('playing')
+        audio.init()
+        audio.startBGM()
       }
     }
 
@@ -825,6 +842,7 @@ export default function Pacman({ darkMode, locationName, locationColor, onClose 
           phaseRef.current = 'playing'
           setUiPhase('playing')
           setUiLives(livesRef.current)
+          audio.startBGM()
         }
       }
     }
@@ -873,11 +891,20 @@ export default function Pacman({ darkMode, locationName, locationColor, onClose 
       // Check collisions
       checkPlayerGhostCollision()
 
+      // Detect frightened mode ending → switch BGM back
+      const anyFrightenedNow = ghostsRef.current.some(g => g.mode === 'frightened')
+      if (wasFrightenedRef.current && !anyFrightenedNow) {
+        wasFrightenedRef.current = false
+        audio.endPowerMode()
+      }
+
       // Check victory
       if (dotsRemainingRef.current <= 0) {
         phaseRef.current = 'victory'
         phaseTimerRef.current = 2500
         setUiPhase('victory')
+        audio.stopBGM()
+        audio.playVictory()
       }
 
       // Sync UI score
@@ -945,6 +972,7 @@ export default function Pacman({ darkMode, locationName, locationColor, onClose 
     rafRef.current = requestAnimationFrame(gameLoop)
     return () => {
       cancelAnimationFrame(rafRef.current)
+      audio.destroy()
     }
   }, [gameLoop])
 
@@ -1258,10 +1286,23 @@ export default function Pacman({ darkMode, locationName, locationColor, onClose 
         borderBottom: '1px solid #2a1060',
         flexShrink: 0,
       }}>
-        <button onClick={onClose} style={{
-          background: 'none', border: 'none', color: '#aa88dd',
-          fontSize: 18, cursor: 'pointer', padding: 4,
-        }}>✕</button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <button onClick={onClose} style={{
+            background: 'none', border: 'none', color: '#aa88dd',
+            fontSize: 18, cursor: 'pointer', padding: 4,
+          }}>✕</button>
+          <button onClick={() => {
+            const next = !muted
+            setMuted(next)
+            audio.setMuted(next)
+          }} style={{
+            background: 'none', border: 'none',
+            fontSize: 16, cursor: 'pointer', padding: 4,
+            opacity: muted ? 0.5 : 1,
+          }} title={muted ? 'Unmute' : 'Mute'}>
+            {muted ? '🔇' : '🎵'}
+          </button>
+        </div>
 
         <p style={{
           fontSize: 18, fontWeight: 900, letterSpacing: '0.12em',
