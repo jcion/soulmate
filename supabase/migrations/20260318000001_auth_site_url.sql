@@ -1,0 +1,5 @@
+-- No schema changes needed for auth.
+-- ACTION REQUIRED: Set your Site URL in Supabase Dashboard → Authentication → URL Configuration
+-- Development: http://localhost:3000
+-- Production: your deployed URL
+-- Add http://localhost:3000/auth/callback to "Redirect URLs" list

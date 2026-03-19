@@ -1,0 +1,600 @@
+'use client'
+
+import { useEffect, useState, useRef, useCallback } from 'react'
+import { supabase } from '@/lib/supabase'
+import {
+  CROP_DEFS, FarmState, FarmPlot, FarmResources,
+  makeStarterFarm, canPlaceCrop, getTreeStage, getCropStage,
+  getGrowthPct, isAcornReady, OAK_WOOD_BY_STAGE,
+} from '@/lib/farmData'
+import SudowoodoTutorial, { SudowoodoHint, SUDOWOODO_HINTS, TUTORIAL_SCREENS } from './Sudowoodo'
+
+const GRID_COLS = 16
+const GRID_ROWS = 12
+const DEMO_FARM_KEY = (code: string) => `soulmate_farm_${code}`
+
+// makeUUID — same pattern as GameClient
+function makeUUID(): string {
+  try { return crypto.randomUUID() }
+  catch {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+      const r = Math.random() * 16 | 0
+      return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16)
+    })
+  }
+}
+
+interface Props {
+  code: string
+  isDemo: boolean
+  myToken: string
+  darkMode: boolean
+}
+
+type Tool = 'none' | 'water' | 'plant' | 'axe' | 'acorn'
+
+export default function FarmClient({ code, isDemo, myToken, darkMode }: Props) {
+  const [farm, setFarm] = useState<FarmState | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [tool, setTool] = useState<Tool>('none')
+  const [selectedSeed, setSelectedSeed] = useState<string | null>(null)
+  const [message, setMessage] = useState<string | null>(null)
+  const [tick, setTick] = useState(0)
+  const [hint, setHint] = useState<string | null>(null)
+  const [tutorialVisible, setTutorialVisible] = useState(false)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [cellSize, setCellSize] = useState(28)
+
+  // ── Data loading ────────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    if (!myToken) return
+
+    const loadFarm = async () => {
+      if (isDemo) {
+        const saved = localStorage.getItem(DEMO_FARM_KEY(code))
+        const farmState: FarmState = saved ? JSON.parse(saved) : makeStarterFarm()
+        if (!saved) {
+          localStorage.setItem(DEMO_FARM_KEY(code), JSON.stringify(farmState))
+        }
+        setFarm(farmState)
+        setTutorialVisible(!farmState.tutorialDone)
+        setLoading(false)
+        return
+      }
+
+      // Supabase mode
+      const { data, error } = await supabase
+        .from('farms')
+        .select('*')
+        .eq('player_token', myToken)
+        .single()
+
+      if (error || !data) {
+        // No row exists — create one
+        const starter = makeStarterFarm()
+        const { data: inserted } = await supabase
+          .from('farms')
+          .insert({
+            player_token: myToken,
+            room_code: code,
+            resources: starter.resources,
+            plots: starter.plots,
+            seeds: starter.seeds,
+            tutorial_done: starter.tutorialDone,
+            tutorial_step: starter.tutorialStep,
+          })
+          .select()
+          .single()
+
+        const farmState: FarmState = inserted
+          ? {
+              resources: inserted.resources as FarmResources,
+              plots: inserted.plots as FarmPlot[],
+              seeds: inserted.seeds as Record<string, number>,
+              tutorialDone: inserted.tutorial_done as boolean,
+              tutorialStep: inserted.tutorial_step as number,
+            }
+          : starter
+
+        setFarm(farmState)
+        setTutorialVisible(!farmState.tutorialDone)
+      } else {
+        const farmState: FarmState = {
+          resources: data.resources as FarmResources,
+          plots: data.plots as FarmPlot[],
+          seeds: data.seeds as Record<string, number>,
+          tutorialDone: data.tutorial_done as boolean,
+          tutorialStep: data.tutorial_step as number,
+        }
+        setFarm(farmState)
+        setTutorialVisible(!farmState.tutorialDone)
+      }
+
+      setLoading(false)
+    }
+
+    loadFarm()
+  }, [myToken, code, isDemo])
+
+  // ── farmUpdate helper ───────────────────────────────────────────────────────
+
+  const farmUpdate = useCallback((patch: Partial<FarmState>) => {
+    setFarm(prev => {
+      if (!prev) return prev
+      const next = { ...prev, ...patch }
+      if (isDemo) {
+        localStorage.setItem(DEMO_FARM_KEY(code), JSON.stringify(next))
+      } else {
+        supabase.from('farms').update({
+          resources: next.resources,
+          plots: next.plots,
+          seeds: next.seeds,
+          tutorial_done: next.tutorialDone,
+          tutorial_step: next.tutorialStep,
+        }).eq('player_token', myToken).then(() => {})
+      }
+      return next
+    })
+  }, [isDemo, code, myToken])
+
+  // ── Tick timer (re-render growth) ───────────────────────────────────────────
+
+  useEffect(() => {
+    const id = setInterval(() => setTick(t => t + 1), 30_000)
+    return () => clearInterval(id)
+  }, [])
+
+  // ── Cell size (responsive) ──────────────────────────────────────────────────
+
+  useEffect(() => {
+    const update = () => {
+      if (containerRef.current) {
+        const w = containerRef.current.clientWidth - 4
+        setCellSize(Math.max(26, Math.floor(w / GRID_COLS)))
+      }
+    }
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+
+  // ── showMessage helper ──────────────────────────────────────────────────────
+
+  const showMessage = (msg: string) => {
+    setMessage(msg)
+    setTimeout(() => setMessage(null), 2200)
+  }
+
+  // ── Tutorial handlers ───────────────────────────────────────────────────────
+
+  const handleTutorialNext = () => {
+    if (!farm) return
+    const nextStep = farm.tutorialStep + 1
+    if (nextStep >= TUTORIAL_SCREENS.length) {
+      // Give berry seeds
+      const newSeeds = { ...farm.seeds, blueberry: (farm.seeds.blueberry || 0) + 2 }
+      farmUpdate({ tutorialDone: true, tutorialStep: nextStep, seeds: newSeeds })
+      setTutorialVisible(false)
+      showMessage('🫐 You received 2 blueberry seeds!')
+    } else {
+      farmUpdate({ tutorialStep: nextStep })
+    }
+  }
+
+  const handleTutorialSkip = () => {
+    farmUpdate({ tutorialDone: true })
+    setTutorialVisible(false)
+  }
+
+  // ── Sudowoodo post-tutorial hints ───────────────────────────────────────────
+
+  useEffect(() => {
+    if (!farm?.tutorialDone) return
+    const lastHint = localStorage.getItem(`sudowoodo_hint_${code}`)
+    const now = Date.now()
+    const lastTime = lastHint ? parseInt(lastHint) : 0
+    if (now - lastTime > 2 * 24 * 3600 * 1000) {
+      const h = SUDOWOODO_HINTS[Math.floor(Math.random() * SUDOWOODO_HINTS.length)]
+      setHint(h)
+      localStorage.setItem(`sudowoodo_hint_${code}`, String(now))
+    }
+  }, [farm?.tutorialDone, code])
+
+  // ── Cell tap handler ────────────────────────────────────────────────────────
+
+  const handleCellTap = (x: number, y: number) => {
+    if (!farm) return
+    const existing = farm.plots.find(p => p.x === x && p.y === y)
+
+    // WATER TOOL
+    if (tool === 'water') {
+      if (!existing || existing.cropType === 'oak') {
+        showMessage('Nothing to water here'); return
+      }
+      if (existing.wateredAt && getCropStage(existing) !== 'unwatered') {
+        showMessage('Already watered!'); return
+      }
+      const newPlots = farm.plots.map(p =>
+        p.id === existing.id ? { ...p, wateredAt: new Date().toISOString() } : p
+      )
+      farmUpdate({ plots: newPlots })
+      showMessage('💧 Watered!')
+      return
+    }
+
+    // AXE TOOL (only on oak trees)
+    if (tool === 'axe') {
+      if (!existing || existing.cropType !== 'oak') {
+        showMessage('No tree to chop here'); return
+      }
+      const stage = getTreeStage(existing)
+      const wood = OAK_WOOD_BY_STAGE[stage]
+      const newPlots = farm.plots.filter(p => p.id !== existing.id)
+      const newResources = { ...farm.resources, wood: farm.resources.wood + wood }
+      farmUpdate({ plots: newPlots, resources: newResources })
+      showMessage(wood > 0 ? `🪵 Chopped! Got ${wood} wood.` : '🌱 Removed sapling.')
+      return
+    }
+
+    // PLANT TOOL (selected seed)
+    if (tool === 'plant' && selectedSeed) {
+      const seedCount = farm.seeds[selectedSeed] || 0
+      if (seedCount <= 0) { showMessage('No seeds left!'); return }
+      const check = canPlaceCrop(farm.plots, selectedSeed, x, y, GRID_COLS, GRID_ROWS)
+      if (!check.ok) { showMessage(`❌ ${check.reason}`); return }
+      const newPlot: FarmPlot = {
+        id: makeUUID(), cropType: selectedSeed, x, y,
+        plantedAt: new Date().toISOString(),
+        wateredAt: null, lastHarvestedAt: null, harvestCount: 0,
+      }
+      const newSeeds = { ...farm.seeds, [selectedSeed]: seedCount - 1 }
+      farmUpdate({ plots: [...farm.plots, newPlot], seeds: newSeeds })
+      showMessage(`🌱 ${CROP_DEFS[selectedSeed]?.label ?? selectedSeed} planted!`)
+      return
+    }
+
+    // ACORN TOOL (plant oak tree)
+    if (tool === 'acorn') {
+      if (farm.resources.acorns <= 0) { showMessage('No acorns!'); return }
+      const check = canPlaceCrop(farm.plots, 'oak', x, y, GRID_COLS, GRID_ROWS)
+      if (!check.ok) { showMessage(`❌ ${check.reason}`); return }
+      const newPlot: FarmPlot = {
+        id: makeUUID(), cropType: 'oak', x, y,
+        plantedAt: new Date().toISOString(),
+        wateredAt: new Date().toISOString(),
+        lastHarvestedAt: null, harvestCount: 0,
+      }
+      const newResources = { ...farm.resources, acorns: farm.resources.acorns - 1 }
+      farmUpdate({ plots: [...farm.plots, newPlot], resources: newResources })
+      showMessage('🌱 Oak sapling planted!')
+      return
+    }
+
+    // NO TOOL — tap to harvest/collect
+    if (!existing) return
+
+    if (existing.cropType === 'oak') {
+      if (!isAcornReady(existing)) {
+        const stage = getTreeStage(existing)
+        if (stage !== 'full') showMessage(`🌳 Oak is ${stage} — needs more time.`)
+        else showMessage('🌰 Acorn not ready yet — check back in a few hours!')
+        return
+      }
+      const newResources = { ...farm.resources, acorns: farm.resources.acorns + 1 }
+      const newPlots = farm.plots.map(p =>
+        p.id === existing.id ? { ...p, lastHarvestedAt: new Date().toISOString() } : p
+      )
+      farmUpdate({ plots: newPlots, resources: newResources })
+      showMessage('🌰 Acorn collected!')
+      return
+    }
+
+    // Crop harvest
+    const stage = getCropStage(existing)
+    if (stage === 'unwatered') { showMessage('💧 Water this first!'); return }
+    if (stage === 'growing') {
+      const pct = Math.round(getGrowthPct(existing) * 100)
+      showMessage(`⏳ ${pct}% grown — not ready yet.`)
+      return
+    }
+    if (stage === 'wilted') {
+      const newPlots = farm.plots.filter(p => p.id !== existing.id)
+      farmUpdate({ plots: newPlots })
+      showMessage('💀 Wilted — removed.')
+      return
+    }
+
+    // Ready!
+    const def = CROP_DEFS[existing.cropType]
+    const newResources = { ...farm.resources }
+    def.drops.forEach(d => { newResources[d.resource] = (newResources[d.resource] || 0) + d.amount })
+    const dropText = def.drops.map(d => `+${d.amount} ${d.resource}`).join(', ')
+
+    if (def.regrows && (existing.harvestCount < (def.maxRegrows ?? Infinity) - 1 || !def.maxRegrows)) {
+      const newPlots = farm.plots.map(p =>
+        p.id === existing.id
+          ? { ...p, lastHarvestedAt: new Date().toISOString(), harvestCount: p.harvestCount + 1 }
+          : p
+      )
+      farmUpdate({ plots: newPlots, resources: newResources })
+    } else {
+      // Remove (doesn't regrow or maxed out)
+      const newPlots = farm.plots.filter(p => p.id !== existing.id)
+      farmUpdate({ plots: newPlots, resources: newResources })
+    }
+    showMessage(`✨ Harvested! ${dropText}`)
+  }
+
+  // ── getCellContent — what to render in each cell ────────────────────────────
+
+  const getCellContent = (x: number, y: number) => {
+    const plot = farm?.plots.find(p => p.x === x && p.y === y)
+    if (!plot) return null
+
+    if (plot.cropType === 'oak') {
+      const stage = getTreeStage(plot)
+      const acornReady = isAcornReady(plot)
+      return {
+        emoji: stage === 'full' ? '🌳' : stage === 'young' ? '🌿' : '🌱',
+        fontSize: stage === 'full' ? cellSize * 0.7 : stage === 'young' ? cellSize * 0.55 : cellSize * 0.4,
+        badge: acornReady ? '🌰' : null,
+        pct: null,
+        filter: null,
+      }
+    }
+
+    const stage = getCropStage(plot)
+    const pct = getGrowthPct(plot)
+    const def = CROP_DEFS[plot.cropType]
+    const emojiSize = stage === 'ready' ? cellSize * 0.65
+      : stage === 'growing' ? cellSize * 0.5
+      : stage === 'unwatered' ? cellSize * 0.35
+      : cellSize * 0.6
+
+    return {
+      emoji: stage === 'unwatered' ? '🌱' : def?.emoji ?? '🌿',
+      fontSize: emojiSize,
+      badge: null,
+      pct: stage === 'growing' ? pct : null,
+      filter: stage === 'wilted' ? 'grayscale(100%) opacity(0.5)' : null,
+    }
+  }
+
+  // ── Cell background colors ──────────────────────────────────────────────────
+
+  const getCellBg = (x: number, y: number, hasPlot: boolean, isValidTarget: boolean) => {
+    const isSky = y <= 1
+    if (isSky && !hasPlot) {
+      return { bg: darkMode ? '#1a2a3a' : '#d0e8f8', border: 'transparent' }
+    }
+    if (hasPlot) {
+      return { bg: darkMode ? '#3a2a14' : '#c8a870', border: darkMode ? '#5a4020' : '#a0804a' }
+    }
+    if (tool !== 'none' && isValidTarget) {
+      return { bg: darkMode ? '#1a3a1a' : '#c8e8c8', border: darkMode ? '#2a6a2a' : '#80b880' }
+    }
+    if (tool !== 'none' && !isValidTarget) {
+      return { bg: darkMode ? '#2a1a1a' : '#f0d0d0', border: 'transparent' }
+    }
+    // Normal grass
+    const shade = (x + y) % 2 === 0
+    return {
+      bg: darkMode ? (shade ? '#1a2e1a' : '#1e321e') : (shade ? '#7ab870' : '#82c478'),
+      border: 'transparent',
+    }
+  }
+
+  // ── Render ──────────────────────────────────────────────────────────────────
+
+  // Suppress unused tick warning — it's used to trigger re-renders
+  void tick
+
+  return (
+    <div ref={containerRef} style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+
+      {/* Loading */}
+      {loading && (
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <p style={{ opacity: 0.5, fontSize: 13 }}>Loading your farm...</p>
+        </div>
+      )}
+
+      {!loading && farm && (
+        <>
+          {/* Toast message */}
+          {message && (
+            <div style={{
+              position: 'fixed', top: 80, left: '50%', transform: 'translateX(-50%)',
+              background: darkMode ? '#1a3a1a' : '#e8f5e8',
+              border: '1px solid #4db84d', borderRadius: 20,
+              padding: '8px 18px', fontSize: 13, fontWeight: 600,
+              color: darkMode ? '#e8f5e8' : '#1a3a1a',
+              zIndex: 100, pointerEvents: 'none',
+              boxShadow: '0 4px 20px rgba(0,80,0,0.3)',
+            }}>{message}</div>
+          )}
+
+          {/* Resource bar */}
+          <div style={{
+            display: 'flex', gap: 12, padding: '8px 16px', overflowX: 'auto',
+            background: darkMode ? '#0d1a0d' : '#e8f5e8',
+            borderBottom: `1px solid ${darkMode ? '#1a3a1a' : '#c8e8c8'}`,
+            flexShrink: 0,
+          }}>
+            {[
+              { icon: '🌰', val: farm.resources.acorns, label: 'Acorns' },
+              { icon: '🪵', val: farm.resources.wood, label: 'Wood' },
+              { icon: '💎', val: farm.resources.gems, label: 'Gems' },
+              { icon: '🫐', val: farm.resources.blueberries, label: 'Blueberries' },
+              { icon: '🌻', val: farm.resources.sunflowerSeeds, label: 'Seeds' },
+              { icon: '🌾', val: farm.resources.wheat, label: 'Wheat' },
+            ].map(r => (
+              <div key={r.label} style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                <span style={{ fontSize: 14 }}>{r.icon}</span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: darkMode ? '#c8e8c8' : '#1a3a1a' }}>{r.val}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Tool bar */}
+          <div style={{
+            display: 'flex', gap: 8, padding: '8px 16px',
+            background: darkMode ? '#0d1a0d' : '#f0f8f0',
+            borderBottom: `1px solid ${darkMode ? '#1a3a1a' : '#c8e8c8'}`,
+            overflowX: 'auto', flexShrink: 0,
+          }}>
+            {/* Tool buttons: none (deselect), water, axe, acorn */}
+            {[
+              { t: 'none' as Tool, icon: '👆', label: 'Harvest' },
+              { t: 'water' as Tool, icon: '🪣', label: 'Water' },
+              { t: 'axe' as Tool, icon: '🪓', label: 'Chop' },
+              { t: 'acorn' as Tool, icon: '🌰', label: `Plant oak (${farm.resources.acorns})` },
+            ].map(({ t, icon, label }) => (
+              <button key={t}
+                onTouchStart={(e) => { e.preventDefault(); setTool(t); setSelectedSeed(null) }}
+                onClick={() => { setTool(t); setSelectedSeed(null) }}
+                style={{
+                  padding: '6px 12px', borderRadius: 10, fontSize: 11, fontWeight: 700,
+                  background: tool === t && selectedSeed === null ? '#4db84d' : (darkMode ? '#1a3a1a' : '#e0f0e0'),
+                  color: tool === t && selectedSeed === null ? 'white' : (darkMode ? '#c8e8c8' : '#1a3a1a'),
+                  border: `1px solid ${tool === t && selectedSeed === null ? '#4db84d' : (darkMode ? '#2a5a2a' : '#a8d8a8')}`,
+                  cursor: 'pointer', flexShrink: 0,
+                  WebkitTapHighlightColor: 'transparent',
+                }}>
+                {icon} {label}
+              </button>
+            ))}
+
+            {/* Seed buttons */}
+            {Object.entries(farm.seeds).filter(([, count]) => count > 0).map(([seedType, count]) => {
+              const def = CROP_DEFS[seedType]
+              if (!def) return null
+              const isSelected = tool === 'plant' && selectedSeed === seedType
+              return (
+                <button key={seedType}
+                  onTouchStart={(e) => { e.preventDefault(); setTool('plant'); setSelectedSeed(seedType) }}
+                  onClick={() => { setTool('plant'); setSelectedSeed(seedType) }}
+                  style={{
+                    padding: '6px 12px', borderRadius: 10, fontSize: 11, fontWeight: 700,
+                    background: isSelected ? '#4db84d' : (darkMode ? '#1a3a1a' : '#e0f0e0'),
+                    color: isSelected ? 'white' : (darkMode ? '#c8e8c8' : '#1a3a1a'),
+                    border: `1px solid ${isSelected ? '#4db84d' : (darkMode ? '#2a5a2a' : '#a8d8a8')}`,
+                    cursor: 'pointer', flexShrink: 0,
+                    WebkitTapHighlightColor: 'transparent',
+                  }}>
+                  {def.emoji} Plant {def.label} ({count})
+                </button>
+              )
+            })}
+          </div>
+
+          {/* Farm grid — scrollable */}
+          <div style={{ overflowY: 'auto', flex: 1, position: 'relative' }}>
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: `repeat(${GRID_COLS}, ${cellSize}px)`,
+              gridTemplateRows: `repeat(${GRID_ROWS}, ${cellSize}px)`,
+              gap: 1,
+              padding: 2,
+              width: 'fit-content',
+              minWidth: '100%',
+              touchAction: tool !== 'none' ? 'none' : 'auto',
+              position: 'relative',
+            }}>
+              {Array.from({ length: GRID_ROWS * GRID_COLS }).map((_, idx) => {
+                const x = idx % GRID_COLS
+                const y = Math.floor(idx / GRID_COLS)
+                const plot = farm.plots.find(p => p.x === x && p.y === y)
+                const content = getCellContent(x, y)
+
+                // Validity check for current tool
+                let isValid = false
+                if (tool === 'plant' && selectedSeed) {
+                  isValid = canPlaceCrop(farm.plots, selectedSeed, x, y, GRID_COLS, GRID_ROWS).ok
+                } else if (tool === 'acorn') {
+                  isValid = canPlaceCrop(farm.plots, 'oak', x, y, GRID_COLS, GRID_ROWS).ok
+                } else if (tool === 'water') {
+                  isValid = !!plot && plot.cropType !== 'oak' && getCropStage(plot) === 'unwatered'
+                } else if (tool === 'axe') {
+                  isValid = !!plot && plot.cropType === 'oak'
+                } else if (tool === 'none') {
+                  isValid = !!plot
+                }
+
+                const { bg, border } = getCellBg(x, y, !!plot, isValid)
+
+                return (
+                  <div
+                    key={idx}
+                    onTouchStart={(e) => { if (tool !== 'none' || plot) { e.preventDefault(); handleCellTap(x, y) } }}
+                    onClick={() => handleCellTap(x, y)}
+                    style={{
+                      width: cellSize, height: cellSize,
+                      background: bg,
+                      border: `1px solid ${border}`,
+                      borderRadius: 2,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      cursor: isValid ? 'pointer' : (plot ? 'pointer' : 'default'),
+                      position: 'relative',
+                      flexDirection: 'column',
+                      overflow: 'hidden',
+                      WebkitTapHighlightColor: 'transparent',
+                      userSelect: 'none',
+                    }}>
+                    {content && (
+                      <>
+                        <span style={{
+                          fontSize: content.fontSize,
+                          filter: content.filter ?? undefined,
+                          lineHeight: 1,
+                        }}>
+                          {content.emoji}
+                        </span>
+                        {/* Acorn ready badge */}
+                        {content.badge && (
+                          <span style={{
+                            position: 'absolute', top: 1, right: 1,
+                            fontSize: cellSize * 0.28, lineHeight: 1,
+                          }}>{content.badge}</span>
+                        )}
+                        {/* Growth progress bar */}
+                        {content.pct !== null && (
+                          <div style={{
+                            position: 'absolute', bottom: 1, left: 1, right: 1,
+                            height: 3, background: 'rgba(0,0,0,0.2)', borderRadius: 2,
+                          }}>
+                            <div style={{
+                              width: `${content.pct * 100}%`, height: '100%',
+                              background: '#4db84d', borderRadius: 2,
+                            }} />
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+
+            {/* Sudowoodo hint bubble (post-tutorial) */}
+            {farm.tutorialDone && hint && (
+              <SudowoodoHint hint={hint} onDismiss={() => setHint(null)} darkMode={darkMode} />
+            )}
+          </div>
+        </>
+      )}
+
+      {/* Tutorial overlay */}
+      {tutorialVisible && farm && (
+        <SudowoodoTutorial
+          screen={farm.tutorialStep}
+          total={TUTORIAL_SCREENS.length}
+          onNext={handleTutorialNext}
+          onSkip={handleTutorialSkip}
+          darkMode={darkMode}
+        />
+      )}
+    </div>
+  )
+}
