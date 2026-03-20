@@ -193,15 +193,15 @@ export default function SudowoodoTutorial({ screen, total, onNext, onSkip, darkM
 }
 
 // ── Post-tutorial hint bubble ─────────────────────────────────────────────────
-interface HintProps { hint: string; onDismiss: () => void; darkMode: boolean }
+interface HintProps { hint: string | null; onDismiss: () => void; darkMode: boolean }
 export function SudowoodoHint({ hint, onDismiss, darkMode }: HintProps) {
   return (
     <div
-      onClick={onDismiss}
+      onClick={hint ? onDismiss : undefined}
       style={{
         position: 'absolute', bottom: 8, left: 8,
         display: 'flex', alignItems: 'flex-end', gap: 8,
-        zIndex: 30, cursor: 'pointer',
+        zIndex: 30, cursor: hint ? 'pointer' : 'default',
       }}>
       <svg width={W * 0.7} height={H * 0.7} style={{ imageRendering: 'pixelated', flexShrink: 0 }}>
         {BODY.map((row, ry) =>
@@ -212,21 +212,23 @@ export function SudowoodoHint({ hint, onDismiss, darkMode }: HintProps) {
           ))
         )}
       </svg>
-      <div style={{
-        background: darkMode ? '#0d220d' : '#ffffff',
-        border: `1.5px solid #4db84d`,
-        borderRadius: '12px 12px 12px 0',
-        padding: '8px 12px',
-        maxWidth: 220,
-        boxShadow: '0 2px 12px rgba(0,80,0,0.2)',
-      }}>
-        <p style={{ fontSize: 11, lineHeight: 1.5, color: darkMode ? '#e8f5e8' : '#1a2a1a', margin: 0 }}>
-          {hint}
-        </p>
-        <p style={{ fontSize: 9, color: '#4db84d', marginTop: 4, textAlign: 'right' }}>
-          tap to dismiss
-        </p>
-      </div>
+      {hint && (
+        <div style={{
+          background: darkMode ? '#0d220d' : '#ffffff',
+          border: `1.5px solid #4db84d`,
+          borderRadius: '12px 12px 12px 0',
+          padding: '8px 12px',
+          maxWidth: 220,
+          boxShadow: '0 2px 12px rgba(0,80,0,0.2)',
+        }}>
+          <p style={{ fontSize: 11, lineHeight: 1.5, color: darkMode ? '#e8f5e8' : '#1a2a1a', margin: 0 }}>
+            {hint}
+          </p>
+          <p style={{ fontSize: 9, color: '#4db84d', marginTop: 4, textAlign: 'right' }}>
+            tap to dismiss
+          </p>
+        </div>
+      )}
     </div>
   )
 }

@@ -1,12 +1,15 @@
 'use client'
 
 import { useEffect, useState, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { getPuzzleByIndex, Word } from '@/lib/puzzles'
 import Ghost from './Ghost'
 import ArcadeModal from './ArcadeModal'
 import NewspaperModal from './NewspaperModal'
 import WordcraftModal from './WordcraftModal'
+import CatSpirit from './CatSpirit'
+import BMO from './BMO'
 import FarmClient from './FarmClient'
 import { SHOP_ITEMS, STARTER_LAYOUT, getItemDef as getItemDefLib, getHappiness } from '@/lib/items'
 
@@ -85,6 +88,7 @@ function canPlace(placedItems: PlacedItem[], itemId: string, x: number, y: numbe
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function GameClient({ code }: { code: string }) {
+  const router = useRouter()
   const [room, setRoom] = useState<Room | null>(null)
   const [myToken, setMyToken] = useState('')
   const [myRole, setMyRole] = useState<'a' | 'b' | null>(null)
@@ -222,8 +226,8 @@ export default function GameClient({ code }: { code: string }) {
   // ── Shop & placement ──────────────────────────────────────────────────────
 
   const buyItem = async (itemId: string, cost: number) => {
-    if (!room || room.coins < cost || room.items.includes(itemId)) return
-    const patch = { coins: room.coins - cost, items: [...room.items, itemId] }
+    if (!room || room.coins < cost || (room.items || []).includes(itemId)) return
+    const patch = { coins: room.coins - cost, items: [...(room.items || []), itemId] }
     await supabase.from('rooms').update(patch).eq('code', code)
   }
 
@@ -355,6 +359,24 @@ export default function GameClient({ code }: { code: string }) {
         </div>
       )}
 
+      {/* Explore button */}
+      <div className="px-4 mb-2">
+        <button
+          onClick={() => router.push('/explore')}
+          style={{
+            width: '100%', padding: '10px 16px',
+            background: 'linear-gradient(135deg, #1a3a2a 0%, #0e2218 100%)',
+            border: '1px solid #2a6a4044', borderRadius: 14,
+            color: '#88cc99', fontSize: 14, fontWeight: 600,
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            cursor: 'pointer',
+          }}
+        >
+          <span>🗺️ Explore</span>
+          <span style={{ fontSize: 12, color: '#447755' }}>Toronto · Williamsburg →</span>
+        </button>
+      </div>
+
       {/* Tab bar */}
       <div className="flex mx-4 rounded-xl p-1 gap-1 mb-1" style={{ background: 'var(--border)' }}>
         {(['play', 'home', 'farm'] as const).map(t => (
@@ -369,6 +391,9 @@ export default function GameClient({ code }: { code: string }) {
       {/* ── Play tab ─────────────────────────────────────────────────────── */}
       {tab === 'play' && (
         <div className="flex flex-col px-4 pb-8 gap-4 mt-3 flex-1">
+
+          {/* BMO */}
+          <BMO darkMode={darkMode} />
 
           {/* Puzzle widget */}
           <div className="rounded-2xl p-4 flex items-center justify-between"
@@ -496,6 +521,9 @@ export default function GameClient({ code }: { code: string }) {
       {/* ── Home tab ─────────────────────────────────────────────────────── */}
       {tab === 'home' && (
         <div className="flex flex-col px-4 pb-8 gap-5 mt-3">
+
+          {/* Cat Spirit */}
+          <CatSpirit roomCode={code} darkMode={darkMode} />
 
           {/* Coin balance */}
           <div className="rounded-2xl p-4 flex items-center justify-between"
@@ -727,7 +755,7 @@ export default function GameClient({ code }: { code: string }) {
             <p className="text-xs font-semibold opacity-50 uppercase tracking-wider mb-2">Shop</p>
             <div className="flex flex-col gap-2">
               {SHOP_ITEMS.filter(item => !item.noShop).map(item => {
-                const owned = room.items.includes(item.id)
+                const owned = (room.items || []).includes(item.id)
                 const canAfford = room.coins >= item.cost
                 return (
                   <div key={item.id} className="rounded-xl p-4 flex items-center justify-between"

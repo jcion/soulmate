@@ -557,8 +557,8 @@ export default function FarmClient({ code, myToken, darkMode }: Props) {
               })}
             </div>
 
-            {/* Sudowoodo hint bubble (post-tutorial) */}
-            {farm.tutorialDone && hint && (
+            {/* Sudowoodo — always visible post-tutorial */}
+            {farm.tutorialDone && (
               <SudowoodoHint hint={hint} onDismiss={() => setHint(null)} darkMode={darkMode} />
             )}
           </div>
