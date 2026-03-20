@@ -106,7 +106,8 @@ export default function GameClient({ code }: { code: string }) {
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
   const [copied, setCopied] = useState(false)
-  const [tab, setTab] = useState<'game' | 'home' | 'farm'>('game')
+  const [tab, setTab] = useState<'play' | 'home' | 'farm'>('play')
+  const [showPuzzle, setShowPuzzle] = useState(false)
   const [selectedItem, setSelectedItem] = useState<string | null>(null)
   const [showDebug, setShowDebug] = useState(false)
   const [showArcade,      setShowArcade]      = useState(false)
@@ -403,87 +404,111 @@ export default function GameClient({ code }: { code: string }) {
 
       {/* Tab bar */}
       <div className="flex mx-4 rounded-xl p-1 gap-1 mb-1" style={{ background: 'var(--border)' }}>
-        {(['game', 'home', 'farm'] as const).map(t => (
+        {(['play', 'home', 'farm'] as const).map(t => (
           <button key={t} onClick={() => setTab(t)}
             className="flex-1 py-2 rounded-lg text-sm font-medium transition-colors"
             style={{ background: tab === t ? 'var(--card)' : 'transparent', color: tab === t ? 'var(--foreground)' : 'rgba(61,43,31,0.5)' }}>
-            {t === 'game' ? '🎮 Game' : t === 'home' ? '🏡 Home' : '🌾 Farm'}
+            {t === 'play' ? '🎮 Play' : t === 'home' ? '🏡 Home' : '🌾 Farm'}
           </button>
         ))}
       </div>
 
-      {/* ── Game tab ─────────────────────────────────────────────────────── */}
-      {tab === 'game' && (
+      {/* ── Play tab ─────────────────────────────────────────────────────── */}
+      {tab === 'play' && (
         <div className="flex flex-col px-4 pb-8 gap-4 mt-3 flex-1">
-          {isComplete ? (
-            <div className="flex flex-col items-center gap-4 pt-8 text-center">
-              <div className="text-5xl">🎉</div>
-              <h2 className="text-xl font-bold">You solved it together!</h2>
-              <p className="text-sm opacity-60">+10 coins added to your home.</p>
-              <div className="rounded-2xl p-5 w-full flex flex-col gap-3" style={{ background: 'var(--card)', border: '1px solid var(--border)' }}>
-                {puzzle.words.map(word => (
-                  <div key={word.id} className="flex justify-between items-center">
-                    <span className="text-sm opacity-60">{word.id}.</span>
-                    <span className="font-mono font-bold tracking-wider" style={{ color: 'var(--success)' }}>{word.answer}</span>
-                  </div>
-                ))}
-              </div>
-              <button onClick={() => setTab('home')} className="px-6 py-2.5 rounded-xl text-sm font-semibold text-white" style={{ background: 'var(--purple)' }}>
-                Go spend your coins →
-              </button>
+
+          {/* Puzzle widget */}
+          <div className="rounded-2xl p-4 flex items-center justify-between"
+            style={{ background: '#08040f', border: '1px solid #8844cc44' }}>
+            <div>
+              <p className="text-xs font-bold" style={{ color: '#cc88ff' }}>🧩 Daily Puzzle</p>
+              <p className="text-xs mt-0.5" style={{ color: '#7755aa' }}>{puzzle.theme}</p>
+              <p className="text-xs mt-0.5" style={{ color: isComplete ? 'var(--success)' : '#7755aa' }}>
+                {isComplete ? '✓ Solved together!' : `${solvedCount} / ${puzzle.words.length} words`}
+              </p>
             </div>
-          ) : (
-            <>
-              <p className="text-center text-sm font-semibold opacity-60">{puzzle.theme}</p>
-              <div className="rounded-xl px-4 py-3 text-sm font-medium text-center"
-                style={{ background: myRole === 'a' ? 'var(--purple)' : 'var(--rose)', color: myRole === 'a' ? 'white' : 'var(--foreground)' }}>
-                {myRole === 'a' ? '📖 You have the clues — read them to your partner' : '💡 You have the hints — guide your partner'}
-              </div>
-              <div className="flex items-center gap-3">
-                <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: 'var(--border)' }}>
-                  <div className="h-full rounded-full transition-all duration-500"
-                    style={{ width: `${(solvedCount / puzzle.words.length) * 100}%`, background: 'var(--success)' }} />
-                </div>
-                <span className="text-xs opacity-60 whitespace-nowrap">{solvedCount}/{puzzle.words.length}</span>
-              </div>
-              <div className="flex flex-col gap-3">
-                {puzzle.words.map((word: Word) => {
-                  const solved = !!room.answers[word.id]
-                  const isWrong = wrongIds.has(word.id)
-                  return (
-                    <div key={word.id} className="rounded-xl p-4 flex flex-col gap-2"
-                      style={{ background: solved ? '#F0FAF0' : 'var(--card)', border: `1px solid ${solved ? 'var(--success)' : isWrong ? 'var(--rose-dark)' : 'var(--border)'}` }}>
-                      <div className="flex items-start gap-2">
-                        <span className="text-xs font-bold mt-0.5 w-5 shrink-0" style={{ color: 'var(--purple)' }}>{word.id}.</span>
-                        <p className="text-sm leading-snug">{myRole === 'a' ? word.clue : word.hint}</p>
+            <button
+              onClick={() => setShowPuzzle(v => !v)}
+              className="text-xs px-4 py-2 rounded-xl font-bold"
+              style={{ background: '#8844cc', color: 'white', border: 'none', cursor: 'pointer' }}>
+              {showPuzzle ? 'Close' : isComplete ? 'View ✓' : 'Play →'}
+            </button>
+          </div>
+
+          {/* Expanded puzzle */}
+          {showPuzzle && (
+            <div className="flex flex-col gap-3">
+              {isComplete ? (
+                <div className="flex flex-col items-center gap-4 text-center">
+                  <div className="text-4xl">🎉</div>
+                  <h2 className="text-lg font-bold">You solved it together!</h2>
+                  <p className="text-sm opacity-60">+10 coins added to your home.</p>
+                  <div className="rounded-2xl p-5 w-full flex flex-col gap-3" style={{ background: 'var(--card)', border: '1px solid var(--border)' }}>
+                    {puzzle.words.map(word => (
+                      <div key={word.id} className="flex justify-between items-center">
+                        <span className="text-sm opacity-60">{word.id}.</span>
+                        <span className="font-mono font-bold tracking-wider" style={{ color: 'var(--success)' }}>{word.answer}</span>
                       </div>
-                      {solved ? (
-                        <div className="flex items-center gap-2 pl-7">
-                          <span className="font-mono font-bold tracking-wider text-sm" style={{ color: 'var(--success)' }}>{room.answers[word.id]}</span>
-                          <span>✓</span>
-                        </div>
-                      ) : (
-                        <div className="flex gap-2 pl-7">
-                          <input type="text" value={inputs[word.id] || ''}
-                            onChange={e => setInputs(prev => ({ ...prev, [word.id]: e.target.value.toUpperCase() }))}
-                            onKeyDown={e => e.key === 'Enter' && submitAnswer(word.id)}
-                            placeholder="Type answer…"
-                            className="flex-1 px-3 py-2 rounded-lg text-sm font-mono outline-none"
-                            style={{ background: isWrong ? '#FEF2F2' : 'var(--background)', border: `1px solid ${isWrong ? 'var(--rose-dark)' : 'var(--border)'}`, color: 'var(--foreground)' }} />
-                          <button onClick={() => submitAnswer(word.id)}
-                            className="px-3 py-2 rounded-lg text-sm font-medium text-white" style={{ background: 'var(--purple)' }}>↵</button>
-                        </div>
-                      )}
+                    ))}
+                  </div>
+                  <button onClick={() => setTab('home')} className="px-6 py-2.5 rounded-xl text-sm font-semibold text-white" style={{ background: 'var(--purple)' }}>
+                    Go spend your coins →
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <p className="text-center text-sm font-semibold opacity-60">{puzzle.theme}</p>
+                  <div className="rounded-xl px-4 py-3 text-sm font-medium text-center"
+                    style={{ background: myRole === 'a' ? 'var(--purple)' : 'var(--rose)', color: myRole === 'a' ? 'white' : 'var(--foreground)' }}>
+                    {myRole === 'a' ? '📖 You have the clues — read them to your partner' : '💡 You have the hints — guide your partner'}
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: 'var(--border)' }}>
+                      <div className="h-full rounded-full transition-all duration-500"
+                        style={{ width: `${(solvedCount / puzzle.words.length) * 100}%`, background: 'var(--success)' }} />
                     </div>
-                  )
-                })}
-              </div>
-              <p className="text-center text-xs opacity-40 pb-2">Talk to each other — neither of you has the full picture.</p>
-            </>
+                    <span className="text-xs opacity-60 whitespace-nowrap">{solvedCount}/{puzzle.words.length}</span>
+                  </div>
+                  <div className="flex flex-col gap-3">
+                    {puzzle.words.map((word: Word) => {
+                      const solved = !!room.answers[word.id]
+                      const isWrong = wrongIds.has(word.id)
+                      return (
+                        <div key={word.id} className="rounded-xl p-4 flex flex-col gap-2"
+                          style={{ background: solved ? '#F0FAF0' : 'var(--card)', border: `1px solid ${solved ? 'var(--success)' : isWrong ? 'var(--rose-dark)' : 'var(--border)'}` }}>
+                          <div className="flex items-start gap-2">
+                            <span className="text-xs font-bold mt-0.5 w-5 shrink-0" style={{ color: 'var(--purple)' }}>{word.id}.</span>
+                            <p className="text-sm leading-snug">{myRole === 'a' ? word.clue : word.hint}</p>
+                          </div>
+                          {solved ? (
+                            <div className="flex items-center gap-2 pl-7">
+                              <span className="font-mono font-bold tracking-wider text-sm" style={{ color: 'var(--success)' }}>{room.answers[word.id]}</span>
+                              <span>✓</span>
+                            </div>
+                          ) : (
+                            <div className="flex gap-2 pl-7">
+                              <input type="text" value={inputs[word.id] || ''}
+                                onChange={e => setInputs(prev => ({ ...prev, [word.id]: e.target.value.toUpperCase() }))}
+                                onKeyDown={e => e.key === 'Enter' && submitAnswer(word.id)}
+                                placeholder="Type answer…"
+                                className="flex-1 px-3 py-2 rounded-lg text-sm font-mono outline-none"
+                                style={{ background: isWrong ? '#FEF2F2' : 'var(--background)', border: `1px solid ${isWrong ? 'var(--rose-dark)' : 'var(--border)'}`, color: 'var(--foreground)' }} />
+                              <button onClick={() => submitAnswer(word.id)}
+                                className="px-3 py-2 rounded-lg text-sm font-medium text-white" style={{ background: 'var(--purple)' }}>↵</button>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                  <p className="text-center text-xs opacity-40 pb-2">Talk to each other — neither of you has the full picture.</p>
+                </>
+              )}
+            </div>
           )}
 
-          {/* Arcade shortcut */}
-          <div className="rounded-2xl p-4 flex items-center justify-between mt-1"
+          {/* Arcade widget */}
+          <div className="rounded-2xl p-4 flex items-center justify-between"
             style={{ background: '#0a0614', border: '1px solid #8844cc44' }}>
             <div>
               <p className="text-xs font-bold" style={{ color: '#cc88ff' }}>🕹️ Arcade</p>
@@ -496,6 +521,7 @@ export default function GameClient({ code }: { code: string }) {
               Play →
             </button>
           </div>
+
         </div>
       )}
 

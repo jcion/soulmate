@@ -49,17 +49,12 @@ export default function NewspaperModal({
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
   const [activeSection, setActiveSection] = useState<Section>('newYork')
-  const [expandedIdx, setExpandedIdx] = useState<number | null>(null)
-
   useEffect(() => {
     fetch('/api/news')
       .then(r => r.json())
       .then(data => { setNews(data); setLoading(false) })
       .catch(() => { setError(true); setLoading(false) })
   }, [])
-
-  // Reset expanded article when switching sections
-  useEffect(() => { setExpandedIdx(null) }, [activeSection])
 
   const bg      = darkMode ? '#1a1208' : '#fdf6e3'
   const card    = darkMode ? '#2a1f10' : '#fff8e7'
@@ -169,94 +164,66 @@ export default function NewspaperModal({
             </div>
           )}
 
-          {!loading && !error && articles.map((article, i) => {
-            const isExpanded = expandedIdx === i
-            const isFirst = i === 0
-            return (
-              <div
-                key={i}
-                style={{
-                  borderBottom: `1px solid ${border}`,
-                  padding: isFirst ? '12px 0 16px' : '14px 0',
-                }}
-              >
-                {/* Headline */}
-                <button
-                  onClick={() => setExpandedIdx(isExpanded ? null : i)}
+          {!loading && !error && articles.map((article, i) => (
+            <div
+              key={i}
+              style={{
+                borderBottom: `1px solid ${border}`,
+                padding: i === 0 ? '12px 0 16px' : '14px 0',
+              }}
+            >
+              <h2 style={{
+                fontFamily: 'Georgia, serif',
+                fontSize: i === 0 ? 18 : 15,
+                fontWeight: 'bold',
+                color: fg,
+                lineHeight: 1.3,
+                marginBottom: 4,
+              }}>
+                {article.title}
+              </h2>
+
+              {article.byline && (
+                <p style={{ fontSize: 10, color: fgMuted, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  {article.byline}
+                </p>
+              )}
+
+              {article.abstract && (
+                <p style={{
+                  fontSize: 13, color: fgMuted, lineHeight: 1.6,
+                  marginBottom: 8,
+                  fontFamily: 'Georgia, serif',
+                }}>
+                  {article.abstract}
+                </p>
+              )}
+
+              {article.url && (
+                <a
+                  href={article.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
                   style={{
-                    background: 'none', border: 'none', cursor: 'pointer',
-                    textAlign: 'left', width: '100%', padding: 0,
+                    display: 'inline-block',
+                    fontSize: 11,
+                    color: accent,
+                    textDecoration: 'none',
+                    borderBottom: `1px solid ${accent}`,
+                    paddingBottom: 1,
                   }}
                 >
-                  <h2 style={{
-                    fontFamily: 'Georgia, serif',
-                    fontSize: isFirst ? 18 : 15,
-                    fontWeight: 'bold',
-                    color: fg,
-                    lineHeight: 1.3,
-                    marginBottom: 4,
-                  }}>
-                    {article.title}
-                  </h2>
-                </button>
+                  Full story →
+                </a>
+              )}
 
-                {article.byline && (
-                  <p style={{ fontSize: 10, color: fgMuted, marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                    {article.byline}
-                  </p>
-                )}
-
-                {/* Snippet — always visible for first article, toggle for rest */}
-                {(isFirst || isExpanded) && article.abstract && (
-                  <p style={{
-                    fontSize: 13, color: fgMuted, lineHeight: 1.5,
-                    marginBottom: 8,
-                    fontFamily: 'Georgia, serif',
-                  }}>
-                    {article.abstract}
-                  </p>
-                )}
-
-                {/* Expand toggle for non-first articles */}
-                {!isFirst && !isExpanded && article.abstract && (
-                  <button
-                    onClick={() => setExpandedIdx(i)}
-                    style={{
-                      background: 'none', border: 'none', cursor: 'pointer',
-                      fontSize: 11, color: accent, padding: 0, marginBottom: 4,
-                    }}
-                  >
-                    Read snippet ▾
-                  </button>
-                )}
-
-                {/* Open in new tab */}
-                {(isFirst || isExpanded) && article.url && (
-                  <a
-                    href={article.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{
-                      display: 'inline-block',
-                      fontSize: 11,
-                      color: accent,
-                      textDecoration: 'none',
-                      borderBottom: `1px solid ${accent}`,
-                      paddingBottom: 1,
-                    }}
-                  >
-                    Full story →
-                  </a>
-                )}
-
-                {article.published && (
-                  <p style={{ fontSize: 10, color: fgMuted, marginTop: 6 }}>
-                    {formatDate(article.published)}
-                  </p>
-                )}
-              </div>
-            )
-          })}
+              {article.published && (
+                <p style={{ fontSize: 10, color: fgMuted, marginTop: 6 }}>
+                  {formatDate(article.published)}
+                </p>
+              )}
+            </div>
+          ))}
 
           {/* Source attribution */}
           {!loading && !error && (

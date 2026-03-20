@@ -35,41 +35,67 @@ async function fetchNYT(section: string): Promise<Article[]> {
 }
 
 async function fetchTorontoRSS(): Promise<Article[]> {
-  try {
-    const res = await fetch('https://www.cbc.ca/cmlink/rss-canada-toronto', {
-      next: { revalidate: 1800 },
-    })
-    if (!res.ok) return []
-    const text = await res.text()
+  const urls = [
+    'https://www.cbc.ca/cmlink/rss-canada-toronto',
+    'https://rss.cbc.ca/lineup/canada-toronto.xml',
+  ]
 
-    const itemMatches = [...text.matchAll(/<item>([\s\S]*?)<\/item>/g)]
+  for (const url of urls) {
+    try {
+      const res = await fetch(url, {
+        next: { revalidate: 1800 },
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (compatible; SoulmateApp/1.0)',
+          'Accept': 'application/rss+xml, application/xml, text/xml, */*',
+        },
+      })
+      if (!res.ok) continue
+      const text = await res.text()
+      if (!text.includes('<item')) continue
 
-    const extract = (block: string, tag: string): string => {
-      // Try CDATA first
-      const cdata = block.match(new RegExp(`<${tag}[^>]*><!\\[CDATA\\[([\\s\\S]*?)\\]\\]><\\/${tag}>`))
-      if (cdata) return cdata[1].trim()
-      const plain = block.match(new RegExp(`<${tag}[^>]*>([^<]*)<\\/${tag}>`))
-      return plain ? plain[1].trim() : ''
-    }
+      const itemMatches = [...text.matchAll(/<item[^>]*>([\s\S]*?)<\/item>/g)]
+      if (itemMatches.length === 0) continue
 
-    return itemMatches.slice(0, 6).map(match => {
-      const block = match[1]
-      const abstract = extract(block, 'description')
-        .replace(/<[^>]*>/g, '')
-        .trim()
-        .slice(0, 280)
-      return {
-        title: extract(block, 'title'),
-        abstract,
-        url: extract(block, 'link'),
-        byline: '',
-        published: extract(block, 'pubDate'),
-        image: null,
+      const extract = (block: string, tag: string): string => {
+        // CDATA
+        const cdata = block.match(new RegExp(`<${tag}[^>]*><!\\[CDATA\\[([\\s\\S]*?)\\]\\]><\\/${tag}>`))
+        if (cdata) return cdata[1].trim()
+        // Plain text
+        const plain = block.match(new RegExp(`<${tag}[^>]*>([^<]*)<\\/${tag}>`))
+        return plain ? plain[1].trim() : ''
       }
-    })
-  } catch {
-    return []
+
+      const extractUrl = (block: string): string => {
+        // Try <link> then <guid>
+        const link = extract(block, 'link')
+        if (link.startsWith('http')) return link
+        const guid = extract(block, 'guid')
+        if (guid.startsWith('http')) return guid
+        return ''
+      }
+
+      return itemMatches.slice(0, 6).map(match => {
+        const block = match[1]
+        const abstract = extract(block, 'description')
+          .replace(/<[^>]*>/g, '')
+          .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+          .trim()
+          .slice(0, 400)
+        return {
+          title: extract(block, 'title').replace(/&amp;/g, '&').replace(/&#39;/g, "'"),
+          abstract,
+          url: extractUrl(block),
+          byline: '',
+          published: extract(block, 'pubDate'),
+          image: null,
+        }
+      })
+    } catch {
+      continue
+    }
   }
+
+  return []
 }
 
 export async function GET() {
