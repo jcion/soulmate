@@ -135,39 +135,53 @@ export default function GameClient({ code }: { code: string }) {
     initialized.current = true
 
     const joinRoom = async () => {
-      // Upsert the shared room so it always exists
-      await supabase.from('rooms').upsert({
-        code,
-        puzzle_index: 0,
-        answers: {},
-        status: 'playing',
-        coins: 50,
-        items: [],
-        placed_items: [],
-        coins_awarded: false,
-      }, { onConflict: 'code', ignoreDuplicates: true })
+      // Step 1: find the shared room
+      let { data, error } = await supabase.from('rooms').select('*').eq('code', code).single()
 
-      const { data, error } = await supabase.from('rooms').select('*').eq('code', code).single()
-      if (error || !data) { setNotFound(true); setLoading(false); return }
+      // Step 2: create it if it doesn't exist yet
+      if (error || !data) {
+        const { data: inserted, error: insertErr } = await supabase
+          .from('rooms')
+          .insert({
+            code,
+            puzzle_index: 0,
+            answers: {},
+            status: 'playing',
+            coins: 50,
+            items: [],
+            placed_items: [],
+            coins_awarded: false,
+          })
+          .select()
+          .single()
 
+        if (insertErr || !inserted) {
+          // Another device may have inserted simultaneously — try one more select
+          const { data: retry } = await supabase.from('rooms').select('*').eq('code', code).single()
+          if (!retry) { console.error('joinRoom failed', insertErr); setNotFound(true); setLoading(false); return }
+          data = retry
+        } else {
+          data = inserted
+        }
+      }
+
+      if (!data) { setNotFound(true); setLoading(false); return }
+
+      // Step 3: claim a player slot
       let role: 'a' | 'b' = 'a'
       if (data.player_a === myToken) {
         role = 'a'
       } else if (data.player_b === myToken) {
         role = 'b'
       } else if (!data.player_a) {
-        const { data: updated } = await supabase
-          .from('rooms').update({ player_a: myToken })
-          .eq('code', code).select().single()
-        if (updated) setRoom(updated)
+        await supabase.from('rooms').update({ player_a: myToken }).eq('code', code)
         role = 'a'
       } else if (!data.player_b) {
-        const { data: updated } = await supabase
-          .from('rooms').update({ player_b: myToken })
-          .eq('code', code).select().single()
-        if (updated) setRoom(updated)
+        await supabase.from('rooms').update({ player_b: myToken }).eq('code', code)
         role = 'b'
       }
+      // If both slots already taken, default to 'a' — still show the game
+
       setMyRole(role)
       setRoom(data)
       setLoading(false)
@@ -258,8 +272,11 @@ export default function GameClient({ code }: { code: string }) {
   )
 
   if (notFound || !room) return (
-    <main className="min-h-screen flex items-center justify-center">
-      <p className="opacity-40 text-sm">Something went wrong. Try refreshing.</p>
+    <main className="min-h-screen flex flex-col items-center justify-center gap-3">
+      <p className="opacity-40 text-sm">Something went wrong.</p>
+      <button onClick={() => window.location.reload()} className="text-sm px-4 py-2 rounded-xl" style={{ background: 'var(--purple)', color: 'white' }}>
+        Refresh
+      </button>
     </main>
   )
 
