@@ -142,16 +142,7 @@ export default function GameClient({ code }: { code: string }) {
       if (error || !data) {
         const { data: inserted, error: insertErr } = await supabase
           .from('rooms')
-          .insert({
-            code,
-            puzzle_index: 0,
-            answers: {},
-            status: 'playing',
-            coins: 50,
-            items: [],
-            placed_items: [],
-            coins_awarded: false,
-          })
+          .insert({ code, status: 'playing' })
           .select()
           .single()
 
