@@ -6,6 +6,7 @@ import { getPuzzleByIndex, Word } from '@/lib/puzzles'
 import Ghost from './Ghost'
 import ArcadeModal from './ArcadeModal'
 import NewspaperModal from './NewspaperModal'
+import WordcraftModal from './WordcraftModal'
 import FarmClient from './FarmClient'
 import { SHOP_ITEMS, STARTER_LAYOUT, getItemDef as getItemDefLib, getHappiness } from '@/lib/items'
 
@@ -113,6 +114,7 @@ export default function GameClient({ code }: { code: string }) {
   const [showArcade,      setShowArcade]      = useState(false)
   const [arcadeInitial,   setArcadeInitial]   = useState<'select' | 'pacman-lobby'>('select')
   const [showNewspaper,   setShowNewspaper]   = useState(false)
+  const [showWordcraft,   setShowWordcraft]   = useState(false)
   const [darkMode, setDarkMode] = useState(false)
   const [infoItem, setInfoItem] = useState<string | null>(null)
   const [placeError, setPlaceError] = useState<string | null>(null)
@@ -507,6 +509,21 @@ export default function GameClient({ code }: { code: string }) {
             </div>
           )}
 
+          {/* Wordcraft widget */}
+          <div className="rounded-2xl p-4 flex items-center justify-between"
+            style={{ background: '#04100a', border: '1px solid #44aa6644' }}>
+            <div>
+              <p className="text-xs font-bold" style={{ color: '#88cc99' }}>🔤 Wordcraft</p>
+              <p className="text-xs mt-0.5" style={{ color: '#447755' }}>Build words on a shared board</p>
+            </div>
+            <button
+              onClick={() => setShowWordcraft(true)}
+              className="text-xs px-4 py-2 rounded-xl font-bold"
+              style={{ background: '#44aa66', color: 'white', border: 'none', cursor: 'pointer' }}>
+              Play →
+            </button>
+          </div>
+
           {/* Arcade widget */}
           <div className="rounded-2xl p-4 flex items-center justify-between"
             style={{ background: '#0a0614', border: '1px solid #8844cc44' }}>
@@ -812,6 +829,14 @@ export default function GameClient({ code }: { code: string }) {
       <NewspaperModal
         darkMode={darkMode}
         onClose={() => setShowNewspaper(false)}
+      />
+    )}
+    {showWordcraft && (
+      <WordcraftModal
+        darkMode={darkMode}
+        roomCode={code}
+        myRole={myRole ?? 'a'}
+        onClose={() => setShowWordcraft(false)}
       />
     )}
     </div>
