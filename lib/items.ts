@@ -6,6 +6,7 @@ export interface ShopItem {
   w: number
   h: number
   beauty: number
+  noShop?: boolean  // starter items — always present, not purchasable
 }
 
 export const SHOP_ITEMS: ShopItem[] = [
@@ -19,7 +20,8 @@ export const SHOP_ITEMS: ShopItem[] = [
   { id: 'fireplace',    label: 'Fireplace',    emoji: '🔥', cost: 20, w: 2, h: 1, beauty: 5 },
   { id: 'piano',        label: 'Piano',        emoji: '🎹', cost: 25, w: 2, h: 1, beauty: 5 },
   { id: 'cat',          label: 'Cat',          emoji: '🐱', cost: 18, w: 1, h: 1, beauty: 4 },
-  { id: 'arcade', label: 'Arcade Machine', emoji: '🕹️', cost: 60, w: 1, h: 2, beauty: 6 },
+  { id: 'arcade',     label: 'Arcade Machine', emoji: '🕹️', cost: 60, w: 1, h: 2, beauty: 6 },
+  { id: 'newspaper',  label: 'Newspaper',      emoji: '📰', cost: 0,  w: 1, h: 1, beauty: 1, noShop: true },
 ]
 
 export const STARTER_LAYOUT: Array<{ itemId: string; x: number; y: number }> = [
@@ -28,6 +30,7 @@ export const STARTER_LAYOUT: Array<{ itemId: string; x: number; y: number }> = [
   { itemId: 'couch',        x: 3, y: 0 }, // 1×2
   { itemId: 'coffee_table', x: 3, y: 2 }, // 2×1
   { itemId: 'rug',          x: 1, y: 3 }, // 3×2
+  { itemId: 'newspaper',    x: 6, y: 0 }, // 1×1
 ]
 
 export function getItemDef(itemId: string): ShopItem | undefined {

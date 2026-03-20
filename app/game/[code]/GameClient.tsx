@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { getPuzzleByIndex, Word } from '@/lib/puzzles'
 import Ghost from './Ghost'
 import ArcadeModal from './ArcadeModal'
+import NewspaperModal from './NewspaperModal'
 import FarmClient from './FarmClient'
 import { SHOP_ITEMS, STARTER_LAYOUT, getItemDef as getItemDefLib, getHappiness } from '@/lib/items'
 
@@ -110,6 +111,7 @@ export default function GameClient({ code }: { code: string }) {
   const [showDebug, setShowDebug] = useState(false)
   const [showArcade,      setShowArcade]      = useState(false)
   const [arcadeInitial,   setArcadeInitial]   = useState<'select' | 'pacman-lobby'>('select')
+  const [showNewspaper,   setShowNewspaper]   = useState(false)
   const [darkMode, setDarkMode] = useState(false)
   const [infoItem, setInfoItem] = useState<string | null>(null)
   const [placeError, setPlaceError] = useState<string | null>(null)
@@ -639,6 +641,7 @@ export default function GameClient({ code }: { code: string }) {
                         if (selectedItem) return  // handled by touch/pointer events
                         if (occupant && def) {
                           if (occupant.itemId === 'arcade') { setArcadeInitial('select'); setShowArcade(true); return }
+                          if (occupant.itemId === 'newspaper') { setShowNewspaper(true); return }
                           setInfoItem(prev => prev === def.id ? null : def.id)
                         }
                       }}
@@ -729,7 +732,7 @@ export default function GameClient({ code }: { code: string }) {
           <div>
             <p className="text-xs font-semibold opacity-50 uppercase tracking-wider mb-2">Shop</p>
             <div className="flex flex-col gap-2">
-              {SHOP_ITEMS.map(item => {
+              {SHOP_ITEMS.filter(item => !item.noShop).map(item => {
                 const owned = room.items.includes(item.id)
                 const canAfford = room.coins >= item.cost
                 return (
@@ -777,6 +780,12 @@ export default function GameClient({ code }: { code: string }) {
         roomCode={code}
         myRole={myRole ?? 'a'}
         initialGame={arcadeInitial}
+      />
+    )}
+    {showNewspaper && (
+      <NewspaperModal
+        darkMode={darkMode}
+        onClose={() => setShowNewspaper(false)}
       />
     )}
     </div>
