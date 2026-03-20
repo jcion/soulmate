@@ -11,8 +11,6 @@ import SudowoodoTutorial, { SudowoodoHint, SUDOWOODO_HINTS, TUTORIAL_SCREENS } f
 
 const GRID_COLS = 16
 const GRID_ROWS = 12
-const DEMO_FARM_KEY = (code: string) => `soulmate_farm_${code}`
-
 // makeUUID — same pattern as GameClient
 function makeUUID(): string {
   try { return crypto.randomUUID() }
@@ -26,14 +24,13 @@ function makeUUID(): string {
 
 interface Props {
   code: string
-  isDemo: boolean
   myToken: string
   darkMode: boolean
 }
 
 type Tool = 'none' | 'water' | 'plant' | 'axe' | 'acorn'
 
-export default function FarmClient({ code, isDemo, myToken, darkMode }: Props) {
+export default function FarmClient({ code, myToken, darkMode }: Props) {
   const [farm, setFarm] = useState<FarmState | null>(null)
   const [loading, setLoading] = useState(true)
   const [tool, setTool] = useState<Tool>('none')
@@ -51,19 +48,6 @@ export default function FarmClient({ code, isDemo, myToken, darkMode }: Props) {
     if (!myToken) return
 
     const loadFarm = async () => {
-      if (isDemo) {
-        const saved = localStorage.getItem(DEMO_FARM_KEY(code))
-        const farmState: FarmState = saved ? JSON.parse(saved) : makeStarterFarm()
-        if (!saved) {
-          localStorage.setItem(DEMO_FARM_KEY(code), JSON.stringify(farmState))
-        }
-        setFarm(farmState)
-        setTutorialVisible(!farmState.tutorialDone)
-        setLoading(false)
-        return
-      }
-
-      // Supabase mode
       const { data, error } = await supabase
         .from('farms')
         .select('*')
@@ -115,7 +99,7 @@ export default function FarmClient({ code, isDemo, myToken, darkMode }: Props) {
     }
 
     loadFarm()
-  }, [myToken, code, isDemo])
+  }, [myToken, code])
 
   // ── farmUpdate helper ───────────────────────────────────────────────────────
 
@@ -123,20 +107,16 @@ export default function FarmClient({ code, isDemo, myToken, darkMode }: Props) {
     setFarm(prev => {
       if (!prev) return prev
       const next = { ...prev, ...patch }
-      if (isDemo) {
-        localStorage.setItem(DEMO_FARM_KEY(code), JSON.stringify(next))
-      } else {
-        supabase.from('farms').update({
-          resources: next.resources,
-          plots: next.plots,
-          seeds: next.seeds,
-          tutorial_done: next.tutorialDone,
-          tutorial_step: next.tutorialStep,
-        }).eq('player_token', myToken).then(() => {})
-      }
+      supabase.from('farms').update({
+        resources: next.resources,
+        plots: next.plots,
+        seeds: next.seeds,
+        tutorial_done: next.tutorialDone,
+        tutorial_step: next.tutorialStep,
+      }).eq('player_token', myToken).then(() => {})
       return next
     })
-  }, [isDemo, code, myToken])
+  }, [myToken])
 
   // ── Tick timer (re-render growth) ───────────────────────────────────────────
 

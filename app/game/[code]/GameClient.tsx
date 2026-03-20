@@ -84,21 +84,7 @@ function canPlace(placedItems: PlacedItem[], itemId: string, x: number, y: numbe
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-const DEMO_KEY = 'soulmate_demo_room'
-
-function makeDemoRoom(puzzleIndex: number): Room {
-  return {
-    id: 'demo', code: 'demo',
-    player_a: 'jason-demo', player_b: 'rui-demo',
-    puzzle_index: puzzleIndex,
-    answers: {}, status: 'playing',
-    coins: 50, items: [], placed_items: [], coins_awarded: false,
-  }
-}
-
 export default function GameClient({ code }: { code: string }) {
-  const isDemo = code === 'demo'
-
   const [room, setRoom] = useState<Room | null>(null)
   const [myToken, setMyToken] = useState('')
   const [myRole, setMyRole] = useState<'a' | 'b' | null>(null)
@@ -106,7 +92,6 @@ export default function GameClient({ code }: { code: string }) {
   const [wrongIds, setWrongIds] = useState<Set<number>>(new Set())
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
-  const [copied, setCopied] = useState(false)
   const [tab, setTab] = useState<'play' | 'home' | 'farm'>('play')
   const [showPuzzle, setShowPuzzle] = useState(false)
   const [selectedItem, setSelectedItem] = useState<string | null>(null)
@@ -119,17 +104,6 @@ export default function GameClient({ code }: { code: string }) {
   const [infoItem, setInfoItem] = useState<string | null>(null)
   const [placeError, setPlaceError] = useState<string | null>(null)
   const initialized = useRef(false)
-
-  // ── Demo helpers ──────────────────────────────────────────────────────────
-
-  const demoUpdate = (patch: Partial<Room>) => {
-    setRoom(prev => {
-      if (!prev) return prev
-      const next = { ...prev, ...patch }
-      localStorage.setItem(DEMO_KEY, JSON.stringify(next))
-      return next
-    })
-  }
 
   // Load dark mode preference
   useEffect(() => {
@@ -160,27 +134,36 @@ export default function GameClient({ code }: { code: string }) {
     if (!myToken || initialized.current) return
     initialized.current = true
 
-    if (isDemo) {
-      const saved = localStorage.getItem(DEMO_KEY)
-      const demoRoom = saved ? (JSON.parse(saved) as Room) : makeDemoRoom(0)
-      setMyRole('a')
-      setRoom(demoRoom)
-      setLoading(false)
-      return
-    }
-
     const joinRoom = async () => {
+      // Upsert the shared room so it always exists
+      await supabase.from('rooms').upsert({
+        code,
+        puzzle_index: 0,
+        answers: {},
+        status: 'playing',
+        coins: 50,
+        items: [],
+        placed_items: [],
+        coins_awarded: false,
+      }, { onConflict: 'code', ignoreDuplicates: true })
+
       const { data, error } = await supabase.from('rooms').select('*').eq('code', code).single()
       if (error || !data) { setNotFound(true); setLoading(false); return }
 
-      let role: 'a' | 'b' | null = null
+      let role: 'a' | 'b' = 'a'
       if (data.player_a === myToken) {
         role = 'a'
       } else if (data.player_b === myToken) {
         role = 'b'
+      } else if (!data.player_a) {
+        const { data: updated } = await supabase
+          .from('rooms').update({ player_a: myToken })
+          .eq('code', code).select().single()
+        if (updated) setRoom(updated)
+        role = 'a'
       } else if (!data.player_b) {
         const { data: updated } = await supabase
-          .from('rooms').update({ player_b: myToken, status: 'playing' })
+          .from('rooms').update({ player_b: myToken })
           .eq('code', code).select().single()
         if (updated) setRoom(updated)
         role = 'b'
@@ -193,7 +176,7 @@ export default function GameClient({ code }: { code: string }) {
   }, [myToken, code])
 
   useEffect(() => {
-    if (!room || isDemo) return
+    if (!room) return
     const channel = supabase.channel(`room-${code}`)
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `code=eq.${code}` },
         (payload) => setRoom(payload.new as Room))
@@ -204,7 +187,6 @@ export default function GameClient({ code }: { code: string }) {
   // Award coins on completion (once)
   useEffect(() => {
     if (!room || room.status !== 'complete' || room.coins_awarded) return
-    if (isDemo) { demoUpdate({ coins: room.coins + 10, coins_awarded: true }); return }
     supabase.from('rooms').update({ coins: room.coins + 10, coins_awarded: true }).eq('code', code)
   }, [room?.status, room?.coins_awarded])
 
@@ -221,8 +203,7 @@ export default function GameClient({ code }: { code: string }) {
       const newAnswers: Record<string, string> = { ...room.answers, [wordId]: answer }
       const allDone = puzzle.words.every(w => newAnswers[String(w.id)])
       const patch = { answers: newAnswers, status: allDone ? 'complete' : 'playing' }
-      if (isDemo) { demoUpdate(patch) }
-      else { await supabase.from('rooms').update(patch).eq('code', code) }
+      await supabase.from('rooms').update(patch).eq('code', code)
       setInputs(prev => ({ ...prev, [wordId]: '' }))
     } else {
       setWrongIds(prev => new Set(prev).add(wordId))
@@ -238,8 +219,7 @@ export default function GameClient({ code }: { code: string }) {
   const buyItem = async (itemId: string, cost: number) => {
     if (!room || room.coins < cost || room.items.includes(itemId)) return
     const patch = { coins: room.coins - cost, items: [...room.items, itemId] }
-    if (isDemo) { demoUpdate(patch) }
-    else { await supabase.from('rooms').update(patch).eq('code', code) }
+    await supabase.from('rooms').update(patch).eq('code', code)
   }
 
   const handleCellClick = async (x: number, y: number) => {
@@ -251,16 +231,12 @@ export default function GameClient({ code }: { code: string }) {
     }
     const newPlaced: PlacedItem = { instanceId: makeUUID(), itemId: selectedItem, x, y }
     const newPlacedItems = [...(room.placed_items || []), newPlaced]
-    if (isDemo) {
-      demoUpdate({ placed_items: newPlacedItems })
-    } else {
-      const { error } = await supabase.from('rooms')
-        .update({ placed_items: newPlacedItems }).eq('code', code)
-      if (error) {
-        setPlaceError('Failed to place item: ' + error.message)
-        setTimeout(() => setPlaceError(null), 3000)
-        return
-      }
+    const { error } = await supabase.from('rooms')
+      .update({ placed_items: newPlacedItems }).eq('code', code)
+    if (error) {
+      setPlaceError('Failed to place item: ' + error.message)
+      setTimeout(() => setPlaceError(null), 3000)
+      return
     }
     setSelectedItem(null)
     setPlaceError(null)
@@ -270,62 +246,29 @@ export default function GameClient({ code }: { code: string }) {
 
   const debugAddCoins = async () => {
     if (!room) return
-    if (isDemo) { demoUpdate({ coins: room.coins + 10 }); return }
     await supabase.from('rooms').update({ coins: room.coins + 10 }).eq('code', code)
-  }
-
-  const copyCode = () => {
-    navigator.clipboard.writeText(code)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
   }
 
   // ── Early states ──────────────────────────────────────────────────────────
 
   if (loading) return (
     <main className="min-h-screen flex items-center justify-center">
-      <p className="opacity-40 text-sm">Joining room…</p>
+      <p className="opacity-40 text-sm">Loading…</p>
     </main>
   )
 
-  if (notFound) return (
-    <main className="min-h-screen flex flex-col items-center justify-center gap-4 px-6">
-      <div className="text-4xl">🔍</div>
-      <p className="font-semibold">Room not found</p>
-      <p className="text-sm opacity-60">Check the code and try again.</p>
-      <a href="/" className="text-sm underline" style={{ color: 'var(--purple)' }}>Go home</a>
+  if (notFound || !room) return (
+    <main className="min-h-screen flex items-center justify-center">
+      <p className="opacity-40 text-sm">Something went wrong. Try refreshing.</p>
     </main>
   )
-
-  if (!room) return null
 
   const puzzle = getPuzzleByIndex(room.puzzle_index)
-  const isWaiting = room.status === 'waiting'
   const isComplete = room.status === 'complete'
   const solvedCount = Object.keys(room.answers).length
   const partnerOnline = !!(room.player_a && room.player_b)
   const placedItems = room.placed_items || []
   const unplacedItems = (room.items || []).filter(id => !placedItems.find(p => p.itemId === id))
-
-  // ── Waiting screen ────────────────────────────────────────────────────────
-
-  if (isWaiting && myRole === 'a') return (
-    <main className="min-h-screen flex flex-col items-center justify-center px-6 gap-6">
-      <div className="text-4xl">⏳</div>
-      <div className="text-center">
-        <p className="font-semibold text-lg">Waiting for your partner</p>
-        <p className="text-sm opacity-60 mt-1">Share this code with them</p>
-      </div>
-      <div className="rounded-2xl px-8 py-5 text-center" style={{ background: 'var(--card)', border: '1px solid var(--border)' }}>
-        <p className="font-mono text-4xl font-bold tracking-widest">{code}</p>
-      </div>
-      <button onClick={copyCode} className="px-6 py-2 rounded-xl text-sm font-medium"
-        style={{ background: 'var(--purple)', color: 'white' }}>
-        {copied ? 'Copied!' : 'Copy Code'}
-      </button>
-      <p className="text-xs opacity-40">This page will update automatically when they join.</p>
-    </main>
-  )
 
   // ── Dark mode CSS vars ────────────────────────────────────────────────────
 
@@ -810,7 +753,6 @@ export default function GameClient({ code }: { code: string }) {
       {tab === 'farm' && myToken && (
         <FarmClient
           code={code}
-          isDemo={isDemo}
           myToken={myToken}
           darkMode={darkMode}
         />
