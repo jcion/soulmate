@@ -12,6 +12,7 @@ import CatSpirit from './CatSpirit'
 import BMO from './BMO'
 import FarmClient from './FarmClient'
 import { SHOP_ITEMS, STARTER_LAYOUT, getItemDef as getItemDefLib, getHappiness } from '@/lib/items'
+import { APP_VERSION } from '@/lib/version'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -323,12 +324,21 @@ export default function GameClient({ code }: { code: string }) {
           style={{ background: '#0d0d1a', border: '1px solid #2a2a4a' }}>
           {/* Header row */}
           <div className="flex items-center justify-between">
-            <span className="text-xs font-mono" style={{ color: '#50fa7b' }}>◉ DEBUG</span>
-            <button onClick={debugAddCoins}
-              className="text-xs px-3 py-1 rounded-lg font-mono font-medium"
-              style={{ background: '#1e1e3a', color: '#bd93f9', border: '1px solid #44447a' }}>
-              + 10 coins
-            </button>
+            <span className="text-xs font-mono" style={{ color: '#50fa7b' }}>◉ DEBUG <span style={{ color: '#6272a4' }}>v{APP_VERSION}</span> <span style={{ color: '#ff79c6' }}>[{tab}]</span></span>
+            <div className="flex items-center gap-2">
+              {tab !== 'farm' && (
+                <button onClick={debugAddCoins}
+                  className="text-xs px-3 py-1 rounded-lg font-mono font-medium"
+                  style={{ background: '#1e1e3a', color: '#bd93f9', border: '1px solid #44447a' }}>
+                  + 10 coins
+                </button>
+              )}
+              <button onClick={() => setShowDebug(false)}
+                className="text-xs px-2 py-1 rounded-lg font-mono"
+                style={{ background: '#1e1e3a', color: '#6272a4', border: '1px solid #44447a' }}>
+                ✕
+              </button>
+            </div>
           </div>
           {/* State log */}
           <div style={{
@@ -343,15 +353,30 @@ export default function GameClient({ code }: { code: string }) {
             whiteSpace: 'pre',
             lineHeight: 1.6,
           }}>
-            {[
+            {tab === 'farm' ? [
+              `version    : ${APP_VERSION}`,
+              `tab        : farm`,
+              `room_code  : ${room.code}`,
+              `my_token   : ${myToken.slice(0,8)}…`,
+              `partner_a  : ${room.player_a ? room.player_a.slice(0,8)+'…' : 'empty'}`,
+              `partner_b  : ${room.player_b ? room.player_b.slice(0,8)+'…' : 'empty'}`,
+            ].join('\n') : tab === 'home' ? [
+              `version    : ${APP_VERSION}`,
+              `tab        : home`,
+              `room_code  : ${room.code}`,
+              `my_role    : ${myRole ?? 'none'}`,
+              `coins      : ${room.coins}`,
+              `items      : ${JSON.stringify(room.items)}`,
+              `placed     : ${JSON.stringify((room.placed_items || []).map(p => `${p.itemId}@(${p.x},${p.y})`), null, 0)}`,
+            ].join('\n') : [
+              `version    : ${APP_VERSION}`,
+              `tab        : play`,
               `room_code  : ${room.code}`,
               `room_id    : ${room.id.slice(0,8)}…`,
               `my_role    : ${myRole ?? 'none'}`,
               `my_token   : ${myToken.slice(0,8)}…`,
               `status     : ${room.status}`,
               `coins      : ${room.coins}`,
-              `items      : ${JSON.stringify(room.items)}`,
-              `placed     : ${JSON.stringify((room.placed_items || []).map(p => `${p.itemId}@(${p.x},${p.y})`), null, 0)}`,
               `partner_a  : ${room.player_a ? room.player_a.slice(0,8)+'…' : 'empty'}`,
               `partner_b  : ${room.player_b ? room.player_b.slice(0,8)+'…' : 'empty'}`,
             ].join('\n')}

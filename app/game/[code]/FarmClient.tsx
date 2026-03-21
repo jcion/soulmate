@@ -29,7 +29,7 @@ interface Props {
   darkMode: boolean
 }
 
-type Tool = 'none' | 'water' | 'plant' | 'axe' | 'acorn'
+type Tool = 'none' | 'water' | 'plant' | 'axe' | 'acorn' | 'info'
 
 export default function FarmClient({ code, myToken, darkMode }: Props) {
   const [farm, setFarm] = useState<FarmState | null>(null)
@@ -40,6 +40,7 @@ export default function FarmClient({ code, myToken, darkMode }: Props) {
   const [tick, setTick] = useState(0)
   const [weather, setWeather] = useState<{ temp: number; code: number } | null>(null)
   const [hint, setHint] = useState<string | null>(null)
+  const [infoPlot, setInfoPlot] = useState<string | null>(null)  // cropType being inspected
   const [tutorialVisible, setTutorialVisible] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const [cellSize, setCellSize] = useState(28)
@@ -226,6 +227,13 @@ export default function FarmClient({ code, myToken, darkMode }: Props) {
   const handleCellTap = (x: number, y: number) => {
     if (!farm) return
     const existing = farm.plots.find(p => p.x === x && p.y === y)
+
+    // INFO TOOL
+    if (tool === 'info') {
+      if (!existing) { showMessage('Nothing planted here'); return }
+      setInfoPlot(existing.cropType)
+      return
+    }
 
     // WATER TOOL
     if (tool === 'water') {
@@ -482,12 +490,13 @@ export default function FarmClient({ code, myToken, darkMode }: Props) {
             borderBottom: `1px solid ${darkMode ? '#1a3a1a' : '#c8e8c8'}`,
             overflowX: 'auto', flexShrink: 0,
           }}>
-            {/* Tool buttons: none (deselect), water, axe, acorn */}
+            {/* Tool buttons: none (deselect), water, axe, acorn, info */}
             {[
               { t: 'none' as Tool, icon: '👆', label: 'Harvest' },
               { t: 'water' as Tool, icon: '🪣', label: 'Water' },
               { t: 'axe' as Tool, icon: '🪓', label: 'Chop' },
               { t: 'acorn' as Tool, icon: '🌰', label: `Plant oak (${farm.resources.acorns})` },
+              { t: 'info' as Tool, icon: 'ℹ️', label: 'Info' },
             ].map(({ t, icon, label }) => (
               <button key={t}
                 onTouchStart={(e) => { e.preventDefault(); setTool(t); setSelectedSeed(null) }}
@@ -625,6 +634,70 @@ export default function FarmClient({ code, myToken, darkMode }: Props) {
           </div>
         </>
       )}
+
+      {/* Crop info modal */}
+      {infoPlot && (() => {
+        const def = CROP_DEFS[infoPlot]
+        if (!def) return null
+        const fmtMs = (ms: number) => {
+          const h = ms / 3_600_000
+          return h < 1 ? `${Math.round(h * 60)}m` : `${h}h`
+        }
+        return (
+          <div
+            onClick={() => setInfoPlot(null)}
+            style={{
+              position: 'fixed', inset: 0, zIndex: 200,
+              background: 'rgba(0,0,0,0.55)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              padding: 24,
+            }}>
+            <div
+              onClick={e => e.stopPropagation()}
+              style={{
+                background: darkMode ? '#0f1f0f' : '#f0f8f0',
+                border: `1px solid ${darkMode ? '#2a5a2a' : '#a8d8a8'}`,
+                borderRadius: 16, padding: 20, maxWidth: 300, width: '100%',
+              }}>
+              {/* Header */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+                <span style={{ fontSize: 36 }}>{def.emoji}</span>
+                <div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: darkMode ? '#c8e8c8' : '#1a3a1a' }}>{def.label}</div>
+                  <div style={{ fontSize: 11, opacity: 0.6, color: darkMode ? '#c8e8c8' : '#1a3a1a', textTransform: 'capitalize' }}>{def.type}</div>
+                </div>
+              </div>
+              {/* Stats */}
+              {[
+                { label: 'Growth time', value: fmtMs(def.growthMs) },
+                { label: 'Waterings needed', value: def.wateringsNeeded === 0 ? 'None' : `${def.wateringsNeeded}×` },
+                { label: 'Wilts after ready', value: def.wiltWindowMs ? fmtMs(def.wiltWindowMs) : 'Never' },
+                { label: 'Harvest', value: def.drops.map(d => `+${d.amount} ${d.resource}`).join(', ') },
+                { label: 'Regrows', value: def.regrows ? (def.maxRegrows ? `Yes (×${def.maxRegrows})` : 'Yes') : 'No' },
+                ...(def.requiresNearTree ? [{ label: 'Requires', value: `Oak tree within ${def.treeProximity ?? 2} cells` }] : []),
+              ].map(({ label, value }) => (
+                <div key={label} style={{
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  padding: '6px 0', borderBottom: `1px solid ${darkMode ? '#1a3a1a' : '#d0ecd0'}`,
+                }}>
+                  <span style={{ fontSize: 12, opacity: 0.65, color: darkMode ? '#c8e8c8' : '#1a3a1a' }}>{label}</span>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: darkMode ? '#c8e8c8' : '#1a3a1a' }}>{value}</span>
+                </div>
+              ))}
+              <button
+                onClick={() => setInfoPlot(null)}
+                style={{
+                  marginTop: 14, width: '100%', padding: '8px 0', borderRadius: 10,
+                  background: darkMode ? '#1a3a1a' : '#c8e8c8',
+                  color: darkMode ? '#c8e8c8' : '#1a3a1a',
+                  border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                }}>
+                Close
+              </button>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Tutorial overlay */}
       {tutorialVisible && farm && (
