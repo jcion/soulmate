@@ -530,6 +530,7 @@ export default function FarmClient({ code, myToken, darkMode }: Props) {
           {/* Farm grid — scrollable */}
           <div style={{ overflowY: 'auto', flex: 1, position: 'relative' }}>
             <div style={{ position: 'relative' }}>
+            <FarmGhosts farm={farm} weather={weather} darkMode={darkMode} />
             <div style={{
               display: 'grid',
               gridTemplateColumns: `repeat(${GRID_COLS}, ${cellSize}px)`,
@@ -615,7 +616,6 @@ export default function FarmClient({ code, myToken, darkMode }: Props) {
                 )
               })}
             </div>
-              <FarmGhosts farm={farm} weather={weather} darkMode={darkMode} />
             </div>
 
             {/* Sudowoodo — always visible post-tutorial */}

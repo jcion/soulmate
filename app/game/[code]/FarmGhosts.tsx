@@ -72,13 +72,13 @@ export default function FarmGhosts({ farm, weather, darkMode }: Props) {
   )
 
   return (
-    <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
+    <>
       <Ghost name="Jason" color="#8844cc" startX={3} startY={8}
         darkMode={darkMode} placedItems={[]}
         gridCols={16} gridRows={12} customMessages={jasonMessages} />
       <Ghost name="Rui" color="#dd4477" startX={11} startY={8}
         darkMode={darkMode} placedItems={[]}
         gridCols={16} gridRows={12} customMessages={ruiMessages} />
-    </div>
+    </>
   )
 }
