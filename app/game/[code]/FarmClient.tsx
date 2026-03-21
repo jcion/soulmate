@@ -8,6 +8,7 @@ import {
   getGrowthPct, isAcornReady, OAK_WOOD_BY_STAGE,
 } from '@/lib/farmData'
 import SudowoodoTutorial, { SudowoodoHint, SUDOWOODO_HINTS, TUTORIAL_SCREENS } from './Sudowoodo'
+import FarmGhosts from './FarmGhosts'
 
 const GRID_COLS = 16
 const GRID_ROWS = 12
@@ -37,6 +38,7 @@ export default function FarmClient({ code, myToken, darkMode }: Props) {
   const [selectedSeed, setSelectedSeed] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [tick, setTick] = useState(0)
+  const [weather, setWeather] = useState<{ temp: number; code: number } | null>(null)
   const [hint, setHint] = useState<string | null>(null)
   const [tutorialVisible, setTutorialVisible] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -44,23 +46,42 @@ export default function FarmClient({ code, myToken, darkMode }: Props) {
 
   // ── Data loading ────────────────────────────────────────────────────────────
 
+  // Normalize a raw DB row's plots array to fill in fields added after initial deploy
+  function rowToFarmState(row: Record<string, unknown>): FarmState {
+    const rawPlots = (row.plots as FarmPlot[]) ?? []
+    const plots = rawPlots.map(p => ({
+      ...p,
+      secondWateredAt: p.secondWateredAt ?? null,
+      waterCount: p.waterCount ?? (p.wateredAt ? 1 : 0),
+      stalledAt: p.stalledAt ?? null,
+    } as FarmPlot))
+    return {
+      resources: row.resources as FarmResources,
+      plots,
+      seeds: row.seeds as Record<string, number>,
+      tutorialDone: row.tutorial_done as boolean,
+      tutorialStep: row.tutorial_step as number,
+    }
+  }
+
   useEffect(() => {
     if (!myToken) return
 
     const loadFarm = async () => {
+      // Farm is shared per room — look up by room_code, not player_token
       const { data, error } = await supabase
         .from('farms')
         .select('*')
-        .eq('player_token', myToken)
+        .eq('room_code', code)
         .single()
 
       if (error || !data) {
-        // No row exists — create one
+        // No shared farm yet — create one (select→insert→retry to avoid races)
         const starter = makeStarterFarm()
-        const { data: inserted } = await supabase
+        const { data: inserted, error: insertErr } = await supabase
           .from('farms')
           .insert({
-            player_token: myToken,
+            player_token: myToken,   // record who created it; not used for lookup
             room_code: code,
             resources: starter.resources,
             plots: starter.plots,
@@ -71,26 +92,20 @@ export default function FarmClient({ code, myToken, darkMode }: Props) {
           .select()
           .single()
 
-        const farmState: FarmState = inserted
-          ? {
-              resources: inserted.resources as FarmResources,
-              plots: inserted.plots as FarmPlot[],
-              seeds: inserted.seeds as Record<string, number>,
-              tutorialDone: inserted.tutorial_done as boolean,
-              tutorialStep: inserted.tutorial_step as number,
-            }
-          : starter
-
-        setFarm(farmState)
-        setTutorialVisible(!farmState.tutorialDone)
-      } else {
-        const farmState: FarmState = {
-          resources: data.resources as FarmResources,
-          plots: data.plots as FarmPlot[],
-          seeds: data.seeds as Record<string, number>,
-          tutorialDone: data.tutorial_done as boolean,
-          tutorialStep: data.tutorial_step as number,
+        if (insertErr || !inserted) {
+          // Another device beat us to the insert — retry the select
+          const { data: retry } = await supabase
+            .from('farms').select('*').eq('room_code', code).single()
+          const farmState = retry ? rowToFarmState(retry as Record<string, unknown>) : starter
+          setFarm(farmState)
+          setTutorialVisible(!farmState.tutorialDone)
+        } else {
+          const farmState = rowToFarmState(inserted as Record<string, unknown>)
+          setFarm(farmState)
+          setTutorialVisible(!farmState.tutorialDone)
         }
+      } else {
+        const farmState = rowToFarmState(data as Record<string, unknown>)
         setFarm(farmState)
         setTutorialVisible(!farmState.tutorialDone)
       }
@@ -113,10 +128,35 @@ export default function FarmClient({ code, myToken, darkMode }: Props) {
         seeds: next.seeds,
         tutorial_done: next.tutorialDone,
         tutorial_step: next.tutorialStep,
-      }).eq('player_token', myToken).then(() => {})
+      }).eq('room_code', code).then(() => {})
       return next
     })
-  }, [myToken])
+  }, [code])
+
+  // ── Real-time farm sync (shared across devices) ─────────────────────────────
+
+  useEffect(() => {
+    if (!farm) return
+    const channel = supabase.channel(`farm-${code}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'farms' },
+        (payload) => {
+          const row = payload.new as Record<string, unknown>
+          if (row.room_code !== code) return
+          setFarm(rowToFarmState(row))
+        }
+      )
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [code, !!farm])
+
+  // ── Weather fetch ────────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    fetch('/api/weather').then(r => r.json()).then(setWeather).catch(() => {})
+  }, [])
 
   // ── Tick timer (re-render growth) ───────────────────────────────────────────
 
@@ -226,7 +266,8 @@ export default function FarmClient({ code, myToken, darkMode }: Props) {
       const newPlot: FarmPlot = {
         id: makeUUID(), cropType: selectedSeed, x, y,
         plantedAt: new Date().toISOString(),
-        wateredAt: null, lastHarvestedAt: null, harvestCount: 0,
+        wateredAt: null, secondWateredAt: null, waterCount: 0, stalledAt: null,
+        lastHarvestedAt: null, harvestCount: 0,
       }
       const newSeeds = { ...farm.seeds, [selectedSeed]: seedCount - 1 }
       farmUpdate({ plots: [...farm.plots, newPlot], seeds: newSeeds })
@@ -242,7 +283,7 @@ export default function FarmClient({ code, myToken, darkMode }: Props) {
       const newPlot: FarmPlot = {
         id: makeUUID(), cropType: 'oak', x, y,
         plantedAt: new Date().toISOString(),
-        wateredAt: new Date().toISOString(),
+        wateredAt: new Date().toISOString(), secondWateredAt: null, waterCount: 1, stalledAt: null,
         lastHarvestedAt: null, harvestCount: 0,
       }
       const newResources = { ...farm.resources, acorns: farm.resources.acorns - 1 }
@@ -304,6 +345,18 @@ export default function FarmClient({ code, myToken, darkMode }: Props) {
       farmUpdate({ plots: newPlots, resources: newResources })
     }
     showMessage(`✨ Harvested! ${dropText}`)
+  }
+
+  // ── Weather helper ──────────────────────────────────────────────────────────
+
+  function weatherEmoji(code: number): string {
+    if (code === 0) return '☀️'
+    if (code <= 3)  return '⛅'
+    if (code <= 48) return '🌫️'
+    if (code <= 67) return '🌧️'
+    if (code <= 77) return '❄️'
+    if (code <= 82) return '🌦️'
+    return '⛈️'
   }
 
   // ── getCellContent — what to render in each cell ────────────────────────────
@@ -400,7 +453,7 @@ export default function FarmClient({ code, myToken, darkMode }: Props) {
             display: 'flex', gap: 12, padding: '8px 16px', overflowX: 'auto',
             background: darkMode ? '#0d1a0d' : '#e8f5e8',
             borderBottom: `1px solid ${darkMode ? '#1a3a1a' : '#c8e8c8'}`,
-            flexShrink: 0,
+            flexShrink: 0, alignItems: 'center',
           }}>
             {[
               { icon: '🌰', val: farm.resources.acorns, label: 'Acorns' },
@@ -415,6 +468,11 @@ export default function FarmClient({ code, myToken, darkMode }: Props) {
                 <span style={{ fontSize: 12, fontWeight: 700, color: darkMode ? '#c8e8c8' : '#1a3a1a' }}>{r.val}</span>
               </div>
             ))}
+            {weather && (
+              <span style={{ marginLeft: 'auto', fontSize: 11, opacity: 0.7, flexShrink: 0, color: darkMode ? '#c8e8c8' : '#1a3a1a' }}>
+                {weatherEmoji(weather.code)} {weather.temp}°C · Toronto
+              </span>
+            )}
           </div>
 
           {/* Tool bar */}
@@ -471,6 +529,7 @@ export default function FarmClient({ code, myToken, darkMode }: Props) {
 
           {/* Farm grid — scrollable */}
           <div style={{ overflowY: 'auto', flex: 1, position: 'relative' }}>
+            <div style={{ position: 'relative' }}>
             <div style={{
               display: 'grid',
               gridTemplateColumns: `repeat(${GRID_COLS}, ${cellSize}px)`,
@@ -555,6 +614,8 @@ export default function FarmClient({ code, myToken, darkMode }: Props) {
                   </div>
                 )
               })}
+            </div>
+              <FarmGhosts farm={farm} weather={weather} darkMode={darkMode} />
             </div>
 
             {/* Sudowoodo — always visible post-tutorial */}
