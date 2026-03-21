@@ -7,6 +7,7 @@ export interface ShopItem {
   h: number
   beauty: number
   noShop?: boolean  // starter items — always present, not purchasable
+  woodCost?: number  // if set, item is craftable with wood (not bought with coins)
 }
 
 export const SHOP_ITEMS: ShopItem[] = [
@@ -22,6 +23,9 @@ export const SHOP_ITEMS: ShopItem[] = [
   { id: 'cat',          label: 'Cat',          emoji: '🐱', cost: 18, w: 1, h: 1, beauty: 4 },
   { id: 'arcade',     label: 'Arcade Machine', emoji: '🕹️', cost: 60, w: 1, h: 2, beauty: 6 },
   { id: 'newspaper',  label: 'Newspaper',      emoji: '📰', cost: 0,  w: 1, h: 1, beauty: 1, noShop: true },
+  { id: 'wood_shelf',   label: 'Wooden Shelf',  emoji: '🪵', cost: 0, w: 3, h: 1, beauty: 3, noShop: true, woodCost: 4  },
+  { id: 'cabin_table',  label: 'Cabin Table',   emoji: '🪑', cost: 0, w: 2, h: 1, beauty: 3, noShop: true, woodCost: 6  },
+  { id: 'garden_bench', label: 'Garden Bench',  emoji: '🛖', cost: 0, w: 2, h: 1, beauty: 4, noShop: true, woodCost: 8  },
 ]
 
 export const STARTER_LAYOUT: Array<{ itemId: string; x: number; y: number }> = [

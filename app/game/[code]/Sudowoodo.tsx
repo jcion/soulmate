@@ -91,12 +91,13 @@ export default function SudowoodoTutorial({ screen, total, onNext, onSkip, darkM
 
   return (
     <div style={{
-      position: 'fixed', inset: 0, zIndex: 500,
-      background: 'rgba(0,20,0,0.75)',
-      display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
-      padding: '0 16px 32px',
+      position: 'fixed', bottom: 0, left: 0, right: 0,
+      zIndex: 500, padding: '0 16px 32px',
+      pointerEvents: 'none',
+      display: 'flex', justifyContent: 'center',
     }}>
       <div style={{
+        pointerEvents: 'auto',
         width: '100%', maxWidth: 420,
         background: cardBg,
         borderRadius: 20,

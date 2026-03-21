@@ -5,10 +5,11 @@ import { supabase } from '@/lib/supabase'
 import {
   CROP_DEFS, FarmState, FarmPlot, FarmResources,
   makeStarterFarm, canPlaceCrop, getTreeStage, getCropStage,
-  getGrowthPct, isAcornReady, OAK_WOOD_BY_STAGE,
+  getGrowthPct, isAcornReady, OAK_WOOD_BY_STAGE, MARKET_PRICES,
 } from '@/lib/farmData'
 import SudowoodoTutorial, { SudowoodoHint, SUDOWOODO_HINTS, TUTORIAL_SCREENS } from './Sudowoodo'
 import FarmGhosts from './FarmGhosts'
+import { SHOP_ITEMS } from '@/lib/items'
 
 const GRID_COLS = 16
 const GRID_ROWS = 12
@@ -42,7 +43,9 @@ export default function FarmClient({ code, myToken, darkMode }: Props) {
   const [hint, setHint] = useState<string | null>(null)
   const [infoPlot, setInfoPlot] = useState<string | null>(null)  // cropType being inspected
   const [tutorialVisible, setTutorialVisible] = useState(false)
+  const [showMarket, setShowMarket] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
+  const tutorialBaseline = useRef({ acorns: 0, plotCount: 0, wateredCount: 0, capturedStep: -1 })
   const [cellSize, setCellSize] = useState(28)
 
   // ── Data loading ────────────────────────────────────────────────────────────
@@ -208,6 +211,51 @@ export default function FarmClient({ code, myToken, darkMode }: Props) {
     setTutorialVisible(false)
   }
 
+  // ── Market handlers ───────────────────────────────────────────────────────
+
+  const handleSell = async (resource: keyof FarmResources, amount: number) => {
+    const pricePerUnit = MARKET_PRICES[resource]
+    if (!pricePerUnit || amount <= 0) return
+    const earned = pricePerUnit * amount
+    const { data: roomData } = await supabase.from('rooms').select('coins').eq('code', code).single()
+    const newCoins = (roomData?.coins ?? 0) + earned
+    await supabase.from('rooms').update({ coins: newCoins }).eq('code', code)
+    farmUpdate({ resources: { ...farm!.resources, [resource]: 0 } })
+    showMessage(`🪙 Sold ${amount} ${resource} for ${earned} coins!`)
+    setShowMarket(false)
+  }
+
+  const handleSellAll = async () => {
+    if (!farm) return
+    let totalEarned = 0
+    const newResources = { ...farm.resources }
+    for (const [resource, price] of Object.entries(MARKET_PRICES) as [keyof FarmResources, number][]) {
+      const amount = farm.resources[resource]
+      if (amount > 0 && price) {
+        totalEarned += price * amount
+        newResources[resource] = 0
+      }
+    }
+    if (totalEarned === 0) { showMessage('Nothing to sell!'); return }
+    const { data: roomData } = await supabase.from('rooms').select('coins').eq('code', code).single()
+    const newCoins = (roomData?.coins ?? 0) + totalEarned
+    await supabase.from('rooms').update({ coins: newCoins }).eq('code', code)
+    farmUpdate({ resources: newResources })
+    showMessage(`🪙 Sold everything for ${totalEarned} coins!`)
+    setShowMarket(false)
+  }
+
+  const handleCraft = async (itemId: string, woodCost: number) => {
+    if (!farm || farm.resources.wood < woodCost) { showMessage('Not enough wood!'); return }
+    const { data: roomData } = await supabase.from('rooms').select('items').eq('code', code).single()
+    const currentItems = (roomData?.items as string[] | null) ?? []
+    await supabase.from('rooms').update({ items: [...currentItems, itemId] }).eq('code', code)
+    farmUpdate({ resources: { ...farm.resources, wood: farm.resources.wood - woodCost } })
+    const craftedItem = SHOP_ITEMS.find(i => i.id === itemId)
+    showMessage(`🪵 Crafted ${craftedItem?.label ?? itemId}! Check the Home tab to place it.`)
+    setShowMarket(false)
+  }
+
   // ── Sudowoodo post-tutorial hints ───────────────────────────────────────────
 
   useEffect(() => {
@@ -221,6 +269,27 @@ export default function FarmClient({ code, myToken, darkMode }: Props) {
       localStorage.setItem(`sudowoodo_hint_${code}`, String(now))
     }
   }, [farm?.tutorialDone, code])
+
+  // ── Tutorial auto-advance on action detection ─────────────────────────────
+
+  useEffect(() => {
+    if (!farm || farm.tutorialDone) return
+
+    if (farm.tutorialStep !== tutorialBaseline.current.capturedStep) {
+      tutorialBaseline.current = {
+        acorns: farm.resources.acorns,
+        plotCount: farm.plots.length,
+        wateredCount: farm.plots.filter(p => !!p.wateredAt).length,
+        capturedStep: farm.tutorialStep,
+      }
+      return
+    }
+
+    const b = tutorialBaseline.current
+    if (farm.tutorialStep === 1 && farm.resources.acorns > b.acorns) handleTutorialNext()
+    if (farm.tutorialStep === 2 && farm.plots.length > b.plotCount) handleTutorialNext()
+    if (farm.tutorialStep === 3 && farm.plots.filter(p => !!p.wateredAt).length > b.wateredCount) handleTutorialNext()
+  }, [farm]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Cell tap handler ────────────────────────────────────────────────────────
 
@@ -477,10 +546,23 @@ export default function FarmClient({ code, myToken, darkMode }: Props) {
               </div>
             ))}
             {weather && (
-              <span style={{ marginLeft: 'auto', fontSize: 11, opacity: 0.7, flexShrink: 0, color: darkMode ? '#c8e8c8' : '#1a3a1a' }}>
+              <span style={{ fontSize: 11, opacity: 0.7, flexShrink: 0, color: darkMode ? '#c8e8c8' : '#1a3a1a' }}>
                 {weatherEmoji(weather.code)} {weather.temp}°C · Toronto
               </span>
             )}
+            <button
+              onClick={() => setShowMarket(true)}
+              style={{
+                marginLeft: 'auto', fontSize: 11, fontWeight: 700, flexShrink: 0,
+                padding: '4px 10px', borderRadius: 8,
+                background: darkMode ? '#1a3a1a' : '#d0eed0',
+                border: `1px solid ${darkMode ? '#2a5a2a' : '#90c890'}`,
+                color: darkMode ? '#c8e8c8' : '#1a3a1a',
+                cursor: 'pointer',
+                WebkitTapHighlightColor: 'transparent',
+              }}>
+              🏪 Market
+            </button>
           </div>
 
           {/* Tool bar */}
@@ -698,6 +780,111 @@ export default function FarmClient({ code, myToken, darkMode }: Props) {
           </div>
         )
       })()}
+
+      {/* Market modal */}
+      {showMarket && farm && (
+        <div
+          onClick={() => setShowMarket(false)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 300,
+            background: 'rgba(0,0,0,0.55)',
+            display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+            padding: '0 16px 32px',
+          }}>
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: darkMode ? '#0f1f0f' : '#f0f8f0',
+              border: `1px solid ${darkMode ? '#2a5a2a' : '#a8d8a8'}`,
+              borderRadius: 20, padding: 20, maxWidth: 400, width: '100%',
+              maxHeight: '75vh', overflowY: 'auto',
+            }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <span style={{ fontSize: 16, fontWeight: 800, color: darkMode ? '#c8e8c8' : '#1a3a1a' }}>🏪 Farm Market</span>
+              <button
+                onClick={() => setShowMarket(false)}
+                style={{ background: 'none', border: 'none', fontSize: 18, cursor: 'pointer', color: darkMode ? '#c8e8c8' : '#1a3a1a', padding: '0 4px' }}>
+                ✕
+              </button>
+            </div>
+
+            <div style={{ fontSize: 11, fontWeight: 700, opacity: 0.55, marginBottom: 8, letterSpacing: 1, color: darkMode ? '#c8e8c8' : '#1a3a1a' }}>SELL CROPS</div>
+            {(Object.entries(MARKET_PRICES) as [keyof FarmResources, number][]).map(([resource, price]) => {
+              const amount = farm.resources[resource]
+              const earned = price * amount
+              return (
+                <div key={resource} style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '7px 0',
+                  borderBottom: `1px solid ${darkMode ? '#1a3a1a' : '#d0ecd0'}`,
+                  opacity: amount === 0 ? 0.35 : 1,
+                }}>
+                  <span style={{ fontSize: 13, color: darkMode ? '#c8e8c8' : '#1a3a1a' }}>
+                    {resource} ×{amount}
+                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 12, color: '#f0a830', fontWeight: 700 }}>
+                      {earned > 0 ? `= ${earned} 🪙` : `${price}/ea`}
+                    </span>
+                    <button
+                      disabled={amount === 0}
+                      onClick={() => handleSell(resource, amount)}
+                      style={{
+                        padding: '4px 10px', borderRadius: 8, fontSize: 11, fontWeight: 700,
+                        background: amount > 0 ? '#f0a830' : (darkMode ? '#1a3a1a' : '#e0e0e0'),
+                        color: amount > 0 ? '#1a1a00' : (darkMode ? '#4a4a4a' : '#aaaaaa'),
+                        border: 'none', cursor: amount > 0 ? 'pointer' : 'default',
+                      }}>
+                      Sell
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+            <button
+              onClick={handleSellAll}
+              style={{
+                width: '100%', marginTop: 10, padding: '9px 0', borderRadius: 10,
+                background: '#f0a830', border: 'none', fontWeight: 700,
+                fontSize: 13, color: '#1a1a00', cursor: 'pointer',
+              }}>
+              Sell Everything →
+            </button>
+
+            <div style={{ fontSize: 11, fontWeight: 700, opacity: 0.55, marginTop: 18, marginBottom: 8, letterSpacing: 1, color: darkMode ? '#c8e8c8' : '#1a3a1a' }}>
+              🪵 WOOD CRAFTING (have: {farm.resources.wood} 🪵)
+            </div>
+            {SHOP_ITEMS.filter(item => item.woodCost).map(item => (
+              <div key={item.id} style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '7px 0',
+                borderBottom: `1px solid ${darkMode ? '#1a3a1a' : '#d0ecd0'}`,
+                opacity: farm.resources.wood < (item.woodCost ?? 0) ? 0.45 : 1,
+              }}>
+                <span style={{ fontSize: 13, color: darkMode ? '#c8e8c8' : '#1a3a1a' }}>
+                  {item.emoji} {item.label}
+                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 12, color: '#8B5E3C', fontWeight: 700 }}>
+                    {item.woodCost}🪵
+                  </span>
+                  <button
+                    disabled={farm.resources.wood < (item.woodCost ?? 0)}
+                    onClick={() => handleCraft(item.id, item.woodCost!)}
+                    style={{
+                      padding: '4px 10px', borderRadius: 8, fontSize: 11, fontWeight: 700,
+                      background: farm.resources.wood >= (item.woodCost ?? 0) ? '#8B5E3C' : (darkMode ? '#1a3a1a' : '#e0e0e0'),
+                      color: farm.resources.wood >= (item.woodCost ?? 0) ? 'white' : (darkMode ? '#4a4a4a' : '#aaaaaa'),
+                      border: 'none', cursor: farm.resources.wood >= (item.woodCost ?? 0) ? 'pointer' : 'default',
+                    }}>
+                    Craft
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Tutorial overlay */}
       {tutorialVisible && farm && (

@@ -259,6 +259,12 @@ export default function GameClient({ code }: { code: string }) {
     await supabase.from('rooms').update({ coins: room.coins + 10 }).eq('code', code)
   }
 
+  const debugRestartOnboarding = async () => {
+    await supabase.from('farms')
+      .update({ tutorial_done: false, tutorial_step: 0 })
+      .eq('room_code', code)
+  }
+
   // ── Early states ──────────────────────────────────────────────────────────
 
   if (loading) return (
@@ -326,7 +332,13 @@ export default function GameClient({ code }: { code: string }) {
           <div className="flex items-center justify-between">
             <span className="text-xs font-mono" style={{ color: '#50fa7b' }}>◉ DEBUG <span style={{ color: '#6272a4' }}>v{APP_VERSION}</span> <span style={{ color: '#ff79c6' }}>[{tab}]</span></span>
             <div className="flex items-center gap-2">
-              {tab !== 'farm' && (
+              {tab === 'farm' ? (
+                <button onClick={debugRestartOnboarding}
+                  className="text-xs px-3 py-1 rounded-lg font-mono font-medium"
+                  style={{ background: '#1e1e3a', color: '#ffb86c', border: '1px solid #44447a' }}>
+                  restart onboarding
+                </button>
+              ) : (
                 <button onClick={debugAddCoins}
                   className="text-xs px-3 py-1 rounded-lg font-mono font-medium"
                   style={{ background: '#1e1e3a', color: '#bd93f9', border: '1px solid #44447a' }}>
