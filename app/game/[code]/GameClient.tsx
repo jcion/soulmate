@@ -108,6 +108,7 @@ export default function GameClient({ code }: { code: string }) {
   const [darkMode, setDarkMode] = useState(false)
   const [infoItem, setInfoItem] = useState<string | null>(null)
   const [placeError, setPlaceError] = useState<string | null>(null)
+  const [craftMessage, setCraftMessage] = useState<string | null>(null)
   const initialized = useRef(false)
 
   // Load dark mode preference
@@ -257,6 +258,21 @@ export default function GameClient({ code }: { code: string }) {
   const debugAddCoins = async () => {
     if (!room) return
     await supabase.from('rooms').update({ coins: room.coins + 10 }).eq('code', code)
+  }
+
+  const handleCraft = async (itemId: string, woodCost: number) => {
+    const { data: farmData } = await supabase.from('farms').select('resources').eq('room_code', code).single()
+    const resources = farmData?.resources as Record<string, number> | null
+    if (!resources || (resources.wood ?? 0) < woodCost) {
+      setCraftMessage(`Need ${woodCost} 🪵 wood — not enough!`)
+      setTimeout(() => setCraftMessage(null), 2500)
+      return
+    }
+    await supabase.from('farms').update({ resources: { ...resources, wood: resources.wood - woodCost } }).eq('room_code', code)
+    await supabase.from('rooms').update({ items: [...(room?.items || []), itemId] }).eq('code', code)
+    const label = SHOP_ITEMS.find(i => i.id === itemId)?.label ?? itemId
+    setCraftMessage(`🪵 Crafted ${label}! Tap it below to place.`)
+    setTimeout(() => setCraftMessage(null), 3000)
   }
 
   const debugRestartOnboarding = async () => {
@@ -786,6 +802,49 @@ export default function GameClient({ code }: { code: string }) {
               </div>
             </div>
           )}
+
+          {/* Wood Crafting */}
+          {(() => {
+            const craftableItems = SHOP_ITEMS.filter(item => item.woodCost)
+            if (craftableItems.length === 0) return null
+            return (
+              <div>
+                <p className="text-xs font-semibold opacity-50 uppercase tracking-wider mb-2">🪵 Wood Crafting</p>
+                {craftMessage && (
+                  <div className="text-xs rounded-lg px-3 py-2 mb-2 font-medium"
+                    style={{ background: craftMessage.startsWith('Need') ? '#3a1a1a' : '#1a3a1a', color: craftMessage.startsWith('Need') ? '#f08080' : '#80d880' }}>
+                    {craftMessage}
+                  </div>
+                )}
+                <div className="flex flex-col gap-2">
+                  {craftableItems.map(item => {
+                    const owned = (room?.items || []).includes(item.id)
+                    return (
+                      <div key={item.id} className="rounded-xl p-4 flex items-center justify-between"
+                        style={{ background: 'var(--card)', border: '1px solid var(--border)' }}>
+                        <div className="flex items-center gap-3">
+                          <span className="text-3xl">{item.emoji}</span>
+                          <div>
+                            <p className="font-medium text-sm">{item.label}</p>
+                            <p className="text-xs opacity-50">🪵 {item.woodCost} wood · {item.w}×{item.h} grid</p>
+                          </div>
+                        </div>
+                        {owned ? (
+                          <span className="text-xs px-3 py-1.5 rounded-lg" style={{ background: '#F0FAF0', color: 'var(--success)' }}>Owned ✓</span>
+                        ) : (
+                          <button onClick={() => handleCraft(item.id, item.woodCost!)}
+                            className="text-xs px-3 py-1.5 rounded-lg font-medium text-white"
+                            style={{ background: '#8B5E3C' }}>
+                            Craft
+                          </button>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })()}
 
           {/* Shop */}
           <div>

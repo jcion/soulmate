@@ -9,7 +9,6 @@ import {
 } from '@/lib/farmData'
 import SudowoodoTutorial, { SudowoodoHint, SUDOWOODO_HINTS, TUTORIAL_SCREENS } from './Sudowoodo'
 import FarmGhosts from './FarmGhosts'
-import { SHOP_ITEMS } from '@/lib/items'
 
 const GRID_COLS = 16
 const GRID_ROWS = 12
@@ -222,7 +221,6 @@ export default function FarmClient({ code, myToken, darkMode }: Props) {
     await supabase.from('rooms').update({ coins: newCoins }).eq('code', code)
     farmUpdate({ resources: { ...farm!.resources, [resource]: 0 } })
     showMessage(`🪙 Sold ${amount} ${resource} for ${earned} coins!`)
-    setShowMarket(false)
   }
 
   const handleSellAll = async () => {
@@ -242,18 +240,6 @@ export default function FarmClient({ code, myToken, darkMode }: Props) {
     await supabase.from('rooms').update({ coins: newCoins }).eq('code', code)
     farmUpdate({ resources: newResources })
     showMessage(`🪙 Sold everything for ${totalEarned} coins!`)
-    setShowMarket(false)
-  }
-
-  const handleCraft = async (itemId: string, woodCost: number) => {
-    if (!farm || farm.resources.wood < woodCost) { showMessage('Not enough wood!'); return }
-    const { data: roomData } = await supabase.from('rooms').select('items').eq('code', code).single()
-    const currentItems = (roomData?.items as string[] | null) ?? []
-    await supabase.from('rooms').update({ items: [...currentItems, itemId] }).eq('code', code)
-    farmUpdate({ resources: { ...farm.resources, wood: farm.resources.wood - woodCost } })
-    const craftedItem = SHOP_ITEMS.find(i => i.id === itemId)
-    showMessage(`🪵 Crafted ${craftedItem?.label ?? itemId}! Check the Home tab to place it.`)
-    setShowMarket(false)
   }
 
   // ── Sudowoodo post-tutorial hints ───────────────────────────────────────────
@@ -851,37 +837,6 @@ export default function FarmClient({ code, myToken, darkMode }: Props) {
               Sell Everything →
             </button>
 
-            <div style={{ fontSize: 11, fontWeight: 700, opacity: 0.55, marginTop: 18, marginBottom: 8, letterSpacing: 1, color: darkMode ? '#c8e8c8' : '#1a3a1a' }}>
-              🪵 WOOD CRAFTING (have: {farm.resources.wood} 🪵)
-            </div>
-            {SHOP_ITEMS.filter(item => item.woodCost).map(item => (
-              <div key={item.id} style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '7px 0',
-                borderBottom: `1px solid ${darkMode ? '#1a3a1a' : '#d0ecd0'}`,
-                opacity: farm.resources.wood < (item.woodCost ?? 0) ? 0.45 : 1,
-              }}>
-                <span style={{ fontSize: 13, color: darkMode ? '#c8e8c8' : '#1a3a1a' }}>
-                  {item.emoji} {item.label}
-                </span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontSize: 12, color: '#8B5E3C', fontWeight: 700 }}>
-                    {item.woodCost}🪵
-                  </span>
-                  <button
-                    disabled={farm.resources.wood < (item.woodCost ?? 0)}
-                    onClick={() => handleCraft(item.id, item.woodCost!)}
-                    style={{
-                      padding: '4px 10px', borderRadius: 8, fontSize: 11, fontWeight: 700,
-                      background: farm.resources.wood >= (item.woodCost ?? 0) ? '#8B5E3C' : (darkMode ? '#1a3a1a' : '#e0e0e0'),
-                      color: farm.resources.wood >= (item.woodCost ?? 0) ? 'white' : (darkMode ? '#4a4a4a' : '#aaaaaa'),
-                      border: 'none', cursor: farm.resources.wood >= (item.woodCost ?? 0) ? 'pointer' : 'default',
-                    }}>
-                    Craft
-                  </button>
-                </div>
-              </div>
-            ))}
           </div>
         </div>
       )}

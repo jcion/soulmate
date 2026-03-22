@@ -6,15 +6,19 @@ import Chess from './Chess'
 import Trivia from './Trivia'
 import Pacman from './Pacman'
 import VoiceChat from './VoiceChat'
+import Recommendations from './Recommendations'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type CityId = 'williamsburg' | 'toronto'
 
+type ActivityType = 'chess' | 'trivia' | 'pacman' | 'recommendations'
+
 interface CityLocation {
   id: string; name: string; emoji: string; color: string
   desc: string; vibe: string
   x: number; y: number; w: number; h: number
+  activity: ActivityType
 }
 
 interface SoulData { name: string; color: string; emoji: string }
@@ -106,16 +110,16 @@ const WBURG: CityConfig = {
   locations: [
     { id: 'aces_pizza',     name: 'Aces Pizza',     emoji: '\uD83C\uDF55', color: '#cc3322',
       desc: 'Thick-crust legends. The real deal.',
-      vibe: 'Casual \u00b7 Loud \u00b7 Cheesy', x: 1,  y: 1,  w: 3, h: 2 },
+      vibe: 'Casual \u00b7 Loud \u00b7 Cheesy', x: 1,  y: 1,  w: 3, h: 2, activity: 'pacman' },
     { id: 'vital_climbing', name: 'Vital Climbing',  emoji: '\uD83E\uDDD7', color: '#2255cc',
       desc: 'Brooklyn\u2019s favourite bouldering gym.',
-      vibe: 'Adventurous \u00b7 Physical \u00b7 Electric', x: 8, y: 1,  w: 3, h: 2 },
+      vibe: 'Adventurous \u00b7 Physical \u00b7 Electric', x: 8, y: 1,  w: 3, h: 2, activity: 'chess' },
     { id: 'devocion',       name: 'Devoci\u00f3n',   emoji: '\u2615',       color: '#8b5e3c',
       desc: 'Farm-to-cup Colombian coffee. Worth the line.',
-      vibe: 'Creative \u00b7 Slow \u00b7 Warm', x: 1, y: 9,  w: 3, h: 2 },
+      vibe: 'Creative \u00b7 Slow \u00b7 Warm', x: 1, y: 9,  w: 3, h: 2, activity: 'recommendations' },
     { id: 'karma_beer',     name: 'Karma Beer',      emoji: '\uD83C\uDF7A', color: '#b8820a',
       desc: 'Natural wine & craft beer. Good vibes only.',
-      vibe: 'Laid-back \u00b7 Social \u00b7 Fun', x: 8, y: 13, w: 3, h: 2 },
+      vibe: 'Laid-back \u00b7 Social \u00b7 Fun', x: 8, y: 13, w: 3, h: 2, activity: 'trivia' },
   ],
   souls: {
     aces_pizza:     [{ name: 'Alex',   color: '#e06080', emoji: '\uD83C\uDFB8' },
@@ -150,16 +154,16 @@ const TORONTO: CityConfig = {
   locations: [
     { id: 'uoft_gym',   name: 'U of T Gym',   emoji: '\uD83C\uDFCB\uFE0F', color: '#002a5c',
       desc: 'The Athletic Centre on St George. Legendary squash courts.',
-      vibe: 'Focused \u00b7 Sweaty \u00b7 Academic', x: 4, y: 2,  w: 3, h: 2 },
+      vibe: 'Focused \u00b7 Sweaty \u00b7 Academic', x: 4, y: 2,  w: 3, h: 2, activity: 'trivia' },
     { id: 'cong_caphe', name: 'Cong Caphe',    emoji: '\u2615',              color: '#c47a1e',
       desc: 'Vietnamese coconut coffee. The lineup is worth it.',
-      vibe: 'Warm \u00b7 Cozy \u00b7 Caffeinated', x: 1, y: 6,  w: 3, h: 2 },
+      vibe: 'Warm \u00b7 Cozy \u00b7 Caffeinated', x: 1, y: 6,  w: 3, h: 2, activity: 'recommendations' },
     { id: 'ahn_dao',    name: 'Ahn Dao',        emoji: '\uD83C\uDF5C',        color: '#cc3344',
       desc: 'The best pho in the city. Regulars only vibe.',
-      vibe: 'Hearty \u00b7 Cozy \u00b7 Soulful', x: 8, y: 10, w: 3, h: 2 },
+      vibe: 'Hearty \u00b7 Cozy \u00b7 Soulful', x: 8, y: 10, w: 3, h: 2, activity: 'chess' },
     { id: 'the_lake',   name: 'The Lake',       emoji: '\uD83C\uDF0A',        color: '#1a7aaa',
       desc: 'Lake Ontario. Feels infinite on a clear day.',
-      vibe: 'Open \u00b7 Calm \u00b7 Infinite', x: 1, y: 13, w: 10, h: 2 },
+      vibe: 'Open \u00b7 Calm \u00b7 Infinite', x: 1, y: 13, w: 10, h: 2, activity: 'recommendations' },
   ],
   souls: {
     uoft_gym:   [{ name: 'Chris', color: '#4080e0', emoji: '\uD83C\uDFCB\uFE0F' },
@@ -371,9 +375,10 @@ export default function ExploreClient() {
   const [city, setCity]             = useState<CityId>('williamsburg')
   const [activeLocation, setActive] = useState<CityLocation | null>(null)
   const [darkMode, setDarkMode]     = useState(true)
-  const [showChess,  setShowChess]  = useState(false)
-  const [showTrivia, setShowTrivia] = useState(false)
-  const [showPacman, setShowPacman] = useState(false)
+  const [showChess,           setShowChess]           = useState(false)
+  const [showTrivia,          setShowTrivia]          = useState(false)
+  const [showPacman,          setShowPacman]          = useState(false)
+  const [showRecommendations, setShowRecommendations] = useState(false)
   const [myToken, setMyToken] = useState('')
   const [myName,  setMyName]  = useState('You')
 
@@ -610,40 +615,41 @@ export default function ExploreClient() {
                   </div>
                 ))}
               </div>
-              <div style={{ marginTop: 9, display: 'flex', gap: 6 }}>
-                <button
-                  onClick={() => setShowChess(true)}
-                  style={{
-                    flex: 1, padding: '8px',
-                    borderRadius: 9, fontSize: 11, fontWeight: 600,
+              <div style={{ marginTop: 9 }}>
+                {activeLocation.activity === 'chess' && (
+                  <button onClick={() => setShowChess(true)} style={{
+                    width: '100%', padding: '10px',
+                    borderRadius: 9, fontSize: 12, fontWeight: 700,
                     background: activeLocation.color + '33',
                     border: `1px solid ${activeLocation.color}66`,
                     color: darkMode ? '#f0e8ff' : '#1a0a2a', cursor: 'pointer',
-                  }}>
-                  ♟ Chess
-                </button>
-                <button
-                  onClick={() => setShowTrivia(true)}
-                  style={{
-                    flex: 1, padding: '8px',
-                    borderRadius: 9, fontSize: 11, fontWeight: 600,
-                    background: '#3a1e0833',
-                    border: '1px solid #cc880066',
+                  }}>♟ Chess</button>
+                )}
+                {activeLocation.activity === 'trivia' && (
+                  <button onClick={() => setShowTrivia(true)} style={{
+                    width: '100%', padding: '10px',
+                    borderRadius: 9, fontSize: 12, fontWeight: 700,
+                    background: '#3a1e0833', border: '1px solid #cc880066',
                     color: darkMode ? '#f0d090' : '#5a3000', cursor: 'pointer',
-                  }}>
-                  🍺 Trivia Night
-                </button>
-                <button
-                  onClick={() => setShowPacman(true)}
-                  style={{
-                    flex: 1, padding: '8px',
-                    borderRadius: 9, fontSize: 11, fontWeight: 600,
-                    background: '#0a002033',
-                    border: '1px solid #8844cc66',
+                  }}>🍺 Trivia Night</button>
+                )}
+                {activeLocation.activity === 'pacman' && (
+                  <button onClick={() => setShowPacman(true)} style={{
+                    width: '100%', padding: '10px',
+                    borderRadius: 9, fontSize: 12, fontWeight: 700,
+                    background: '#0a002033', border: '1px solid #8844cc66',
                     color: darkMode ? '#cc88ff' : '#440066', cursor: 'pointer',
-                  }}>
-                  👾 Pac-Man
-                </button>
+                  }}>👾 Pac-Man</button>
+                )}
+                {activeLocation.activity === 'recommendations' && (
+                  <button onClick={() => setShowRecommendations(true)} style={{
+                    width: '100%', padding: '10px',
+                    borderRadius: 9, fontSize: 12, fontWeight: 700,
+                    background: activeLocation.color + '33',
+                    border: `1px solid ${activeLocation.color}66`,
+                    color: darkMode ? '#f0e8ff' : '#1a0a2a', cursor: 'pointer',
+                  }}>✨ Get Recommendations</button>
+                )}
               </div>
               {myToken && (
                 <VoiceChat
@@ -704,6 +710,16 @@ export default function ExploreClient() {
           locationName={activeLocation.name}
           locationColor={activeLocation.color}
           onClose={() => setShowPacman(false)}
+        />
+      )}
+
+      {/* Recommendations modal */}
+      {showRecommendations && activeLocation && (
+        <Recommendations
+          darkMode={darkMode}
+          locationName={activeLocation.name}
+          locationColor={activeLocation.color}
+          onClose={() => setShowRecommendations(false)}
         />
       )}
     </div>
